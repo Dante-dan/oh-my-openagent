@@ -11,6 +11,7 @@ import {
   readdirSync,
   rmSync,
   statSync,
+  truncateSync,
   writeFileSync,
 } from "node:fs"
 import { tmpdir } from "node:os"
@@ -242,6 +243,29 @@ describe("runtime manifest", () => {
 })
 
 describe("size budget", () => {
+  test.each([
+    ["darwin-arm64", 104_857_600, true],
+    ["darwin-arm64", 104_857_601, false],
+    ["linux-x64", 104_857_601, true],
+    ["windows-x64", 157_286_400, true],
+    ["windows-x64", 157_286_401, false],
+  ] as const)("#given %s at %d bytes #when its target budget is enforced #then accepted is %s", (target, size, accepted) => {
+    // given
+    const root = makeTempDir("omo-size-boundary-")
+    const binary = join(root, "binary")
+    try {
+      writeFileSync(binary, "")
+      truncateSync(binary, size)
+      // when
+      const enforce = (): void => assertBinarySizeBudget(target, binary)
+      // then
+      if (accepted) expect(enforce).not.toThrow()
+      else expect(enforce).toThrow(new RegExp(target))
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   test("#given a synthetic oversize binary #when the budget is enforced #then it fails loud naming the target", () => {
     // given
     const stageDir = makeTempDir("omo-size-")
@@ -387,6 +411,33 @@ describe("plugin staging isolation guard", () => {
 })
 
 describe("engine graph bundling", () => {
+  test("#given release compile argv #when inspected #then splitting and name-preserving full minification are enabled", () => {
+    // given
+    const source = readFileSync(join(scriptDir, "build-omo-binary.ts"), "utf8")
+    // when: inspect only the argv consumed by the production compile, not probe flags.
+    const argv = /compileOutput\s*=\s*runCommandCaptured\(\s*"bun",\s*\[([\s\S]*?)\]/.exec(source)?.[1]
+    if (argv === undefined) throw new Error("release compile argv is missing")
+    const literals = [...argv.matchAll(/"([^"\n]+)"/g)].map((match) => match[1])
+    // then
+    expect(literals).toEqual([
+      "build", "--compile", "--splitting", "--minify", "--keep-names",
+      "--compile-autoload-package-json", "--no-compile-autoload-dotenv",
+      "--no-compile-autoload-bunfig", "--outfile",
+    ])
+    expect(literals).not.toContain("--minify-whitespace")
+    expect(argv.indexOf("compileEntry,")).toBeLessThan(argv.indexOf("...senpiWorkerCompileArgs(repoRoot)"))
+    expect(argv).toContain("`--asset=${stageDir}`")
+    expect(argv).toContain("`--target=${target.bunTarget}`")
+  })
+
+  test("#given recorded splitting output #when parsed #then the observed 4476 modules are extracted", () => {
+    // given: recorded two-entry splitting probe; not a production count pin.
+    const output = "\n [300ms]  bundle  4476 modules\n\n [132ms]  compile  /tmp/x\n"
+    // when / then
+    expect(parseBundledModuleCount(output)).toBe(4476)
+    expect(assertEngineGraphBundled(output)).toBe(4476)
+  })
+
   test("#given the compiled OMO entry #when its engine imports are inspected #then both retain the standard patched engine literal", () => {
     // given
     const compileEntrySource = readFileSync(
