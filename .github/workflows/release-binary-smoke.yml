@@ -35,8 +35,6 @@ jobs:
           - os: windows-latest
             target: windows-x64
             binary: omo-windows-x64.exe
-    env:
-      OUT_DIR: ${{ runner.temp }}/release-binary-smoke
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -53,6 +51,8 @@ jobs:
         run: node packages/omo-native/bin/senpi-patch.mjs
       - name: Build release binary
         id: build
+        env:
+          OUT_DIR: ${{ runner.temp }}/release-binary-smoke
         run: |
           bun run script/build-omo-binary.ts \
             --target "${{ matrix.target }}" \
@@ -68,6 +68,8 @@ jobs:
           bun test script/release-binary-smoke-workflow.test.ts script/publish-release-platform-workflow.test.ts script/qa/dependency-audit-capture.test.ts
       - name: Capture compiled RPC and extension receipts
         id: capture
+        env:
+          OUT_DIR: ${{ runner.temp }}/release-binary-smoke
         run: |
           bun script/qa/dependency-audit-capture.ts --phase post \
             --binary "$OUT_DIR/${{ matrix.binary }}" --out "$OUT_DIR/post" \
@@ -82,3 +84,15 @@ jobs:
           path: ${{ runner.temp }}/release-binary-smoke/post/*.json
           if-no-files-found: error
           retention-days: 7
+      - name: Write job summary
+        id: summary
+        if: always()
+        env:
+          JOB_SUMMARY_TITLE: Release binary smoke (${{ matrix.target }})
+          JOB_SUMMARY_STATUS: ${{ job.status }}
+          JOB_SUMMARY_DETAILS: |
+            - Builds the native release target with splitting and name-preserving minification.
+            - Tests relocated workers and compiled RPC/extension behavior.
+            - Uploads JSON receipts only; never publishes a binary.
+          JOB_SUMMARY_NEXT: Inspect the first failed build, contract, or receipt gate for this target.
+        run: GITHUB_STEP_SUMMARY="$GITHUB_STEP_SUMMARY" bash .github/scripts/write-job-summary.sh

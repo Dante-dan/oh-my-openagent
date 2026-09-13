@@ -6,6 +6,7 @@ import { z } from "zod"
 const stepSchema = z.object({
   id: z.string().optional(), uses: z.string().optional(), run: z.string().optional(),
   if: z.string().optional(), "continue-on-error": z.boolean().optional(),
+  env: z.record(z.string(), z.string()).optional(),
   with: z.record(z.string(), z.union([z.string(), z.number()])).optional(),
 })
 const workflowSchema = z.object({
@@ -13,6 +14,7 @@ const workflowSchema = z.object({
   permissions: z.record(z.string(), z.string()),
   jobs: z.object({ smoke: z.object({
     "runs-on": z.string(),
+    env: z.record(z.string(), z.string()).optional(),
     strategy: z.object({ "fail-fast": z.boolean(), matrix: z.object({ include: z.array(z.object({ os: z.string(), target: z.string(), binary: z.string() })) }) }),
     steps: z.array(stepSchema),
   }) }).strict(),
@@ -22,6 +24,16 @@ function readWorkflow() {
 }
 
 describe("release binary PR smoke workflow", () => {
+  test("resolves runner temp at step scope when configuring output paths", () => {
+    // given / when
+    const job = readWorkflow().jobs.smoke
+    // then: runner context is unavailable in a job-level env mapping.
+    expect(job.env).toBeUndefined()
+    for (const id of ["build", "capture"]) {
+      expect(job.steps.find((step) => step.id === id)?.env?.OUT_DIR).toBe("${{ runner.temp }}/release-binary-smoke")
+    }
+  })
+
   test("runs only on pull requests when a release input changes", () => {
     // given / when
     const workflow = readWorkflow()
@@ -54,7 +66,7 @@ describe("release binary PR smoke workflow", () => {
     const steps = readWorkflow().jobs.smoke.steps
     const byId = new Map(steps.map((step) => [step.id, step]))
     // then: ids are workflow wiring, not authored step names.
-    expect(steps.flatMap((step) => step.id ? [step.id] : [])).toEqual(["install", "patch", "build", "contracts", "capture", "receipts"])
+    expect(steps.flatMap((step) => step.id ? [step.id] : [])).toEqual(["install", "patch", "build", "contracts", "capture", "receipts", "summary"])
     expect(steps.find((step) => step.uses === "oven-sh/setup-bun@v2")?.with?.["bun-version"]).toBe("1.4.2")
     expect(byId.get("install")?.run).toBe("bun install --frozen-lockfile --ignore-scripts")
     expect(byId.get("patch")?.run).toBe("node packages/omo-native/bin/senpi-patch.mjs")
@@ -69,6 +81,16 @@ describe("release binary PR smoke workflow", () => {
     expect(byId.get("capture")?.run).toContain("jq -e")
     expect(byId.get("capture")?.run).toContain('[.cases[].case] == ["bytes", "graph", "rpc", "extension"]')
     expect(steps.every((step) => step["continue-on-error"] !== true)).toBe(true)
+  })
+
+  test("writes a job summary even when a smoke step fails", () => {
+    // given / when
+    const summary = readWorkflow().jobs.smoke.steps.find((step) => step.id === "summary")
+    // then
+    expect(summary?.if).toBe("always()")
+    expect(summary?.env?.JOB_SUMMARY_STATUS).toBe("${{ job.status }}")
+    expect(summary?.run).toContain('GITHUB_STEP_SUMMARY="$GITHUB_STEP_SUMMARY"')
+    expect(summary?.run).toContain("bash .github/scripts/write-job-summary.sh")
   })
 
   test("uploads only JSON receipts when collecting CI evidence", () => {
