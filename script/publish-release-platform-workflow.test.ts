@@ -242,6 +242,23 @@ describe("release and platform publish workflows", () => {
 })
 
 describe("release binary asset lane in the platform publish workflow", () => {
+  test("gates runnable binary uploads on worker and compiled RPC/extension probes", () => {
+    // given
+    const workflow = readFileSync(publishPlatformWorkflowPath, "utf8")
+    // when
+    const gate = sliceWorkflowSection(workflow, "      - name: Smoke compiled workers and RPC", "      - name: Upload release binary artifact")
+    // then
+    expect(gate).toContain("if: steps.release-assets.outputs.binary_exists != 'true'")
+    expect(gate).toContain("bun test script/senpi-worker-compile.test.ts")
+    expect(gate).toContain("--case rpc --case extension")
+    expect(gate).toContain("jq -e")
+    expect(gate).toContain('[.cases[].case] == ["rpc", "extension"]')
+    expect(gate).toContain("darwin-arm64|linux-x64|linux-x64-baseline|windows-x64|windows-x64-baseline)")
+    expect(gate).not.toContain("continue-on-error")
+    expect(workflow.indexOf("node packages/omo-native/bin/senpi-patch.mjs")).toBeGreaterThan(workflow.indexOf("bun install --frozen-lockfile --ignore-scripts"))
+    expect(workflow.indexOf("node packages/omo-native/bin/senpi-patch.mjs")).toBeLessThan(workflow.indexOf("      - name: Build release binary"))
+  })
+
   test("plumbs omo_ai_version into the release-binary build", () => {
     // #given
     const workflow = readFileSync(publishPlatformWorkflowPath, "utf8")
