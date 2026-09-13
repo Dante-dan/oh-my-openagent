@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import { join } from "node:path"
 import * as comparison from "./dependency-audit/comparison"
 import "./dependency-audit/compare-cli.cases"
 import {
@@ -39,7 +40,7 @@ describe("dependency audit parsers", () => {
     // when
     const result = graphArguments(release, "/graph")
     // then
-    expect(result).toEqual(["build", "--target=bun", "--minify-whitespace", "entry.ts", "worker.ts", "--outdir", "/graph", "--metafile=/graph/meta.json"])
+    expect(result).toEqual(["build", "--target=bun", "--minify-whitespace", "entry.ts", "worker.ts", "--outdir", "/graph", `--metafile=${join("/graph", "meta.json")}`])
   })
   test("rejects malformed CLI input when a case can escape the output directory", () => {
     // given
