@@ -27,6 +27,12 @@ disconnection recovery and source/recipient session switching. Its readiness
 signal is the existing memory binding entry, not an extension-event capability
 that the stdio client did not negotiate.
 
+## 2026-09-13 - Ship the agent toolkit as an eval SDK
+
+Adds `plugin/runtime/agent-toolkit-sdk/sdk.js` at `OMO_AGENT_TOOLKIT_SDK_ROOT`. The SDK imports only Node builtins and binds each call synchronously from `PI_SESSION_ID`, `PI_SESSION_CWD`, and `PI_GOAL_STORE_FILE`; importing it performs no I/O. Missing session facts resolve as operation-tagged failure envelopes. Checkpoints and review blockers use the session's driver snapshot unless explicitly supplied, with authoritative `goal:null` stopping fallback reads. Invalid stores are advisory warnings and are never rewritten.
+
+The host status reader uses the additive `#omo-agent-toolkit-sdk` import map. Build freshness, installer/payload allowlists, node-only input checks, and isolated worker tests cover the new artifact. Generic directory provisioning preserves DAG behavior. This increment retains the old tool registration, runtime alias, and sidecar; their removal is a separate change.
+
 ## 2026-09-12 — Drop the retired agent-name alias notices
 
 The `omo-config:agent-alias-deprecated` startup warning is removed from `components/config-startup/index.ts` together with its `StartupNotice.kind` discriminator: with the alias gone from senpi-task, `agents.metis` / `agents.momus` are ordinary custom agent keys and there is nothing to deprecate. `components/task/dag-lint.ts` no longer warns on a retired `subagent_type`, and `components/telemetry/omo-native-tools.ts` reports the submitted subagent name (a retired id masks to `custom` like any other unknown name) instead of canonicalizing it first. `scripts/qa/plan-gated-agents-e2e.mjs`'s four alias scenarios become `retired-id` / `team-retired` / `dag-retired` / `retired-config`, each asserting the removal on a real senpi process: the retired id never reaches plan-reviewer, team_create names the submitted id, a workflow route keeps it verbatim, the config key defines a custom agent, and no surface prints a deprecation line.

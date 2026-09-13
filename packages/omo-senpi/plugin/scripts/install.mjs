@@ -304,6 +304,7 @@ var REQUIRED_PLUGIN_ARTIFACTS = [
   join4("skills", "ulw-research", "SKILL.md"),
   join4("skills", "visual-qa", "SKILL.md"),
   join4("skills-conditional", "x-search", "SKILL.md"),
+  join4("runtime", "agent-toolkit-sdk", "sdk.js"),
   join4("runtime", "ast-grep-mcp", "cli.js"),
   join4("runtime", "lsp-daemon", "dist", "cli.js"),
   join4("runtime", "lsp-daemon", "dist", "index.js"),

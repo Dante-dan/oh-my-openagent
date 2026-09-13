@@ -6,7 +6,8 @@
   "type": "module",
   "imports": {
     "#omo-task-runtime": "./extensions/omo-task.js",
-    "#omo-agent-toolkit-runtime": "./extensions/omo-agent-toolkit.js"
+    "#omo-agent-toolkit-runtime": "./extensions/omo-agent-toolkit.js",
+    "#omo-agent-toolkit-sdk": "./runtime/agent-toolkit-sdk/sdk.js"
   },
   "keywords": [
     "pi-package",
