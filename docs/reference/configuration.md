@@ -491,7 +491,7 @@ The OpenCode edition's orchestration key (`sisyphus_agent`) and its file-based t
 
 Skills bring domain-specific expertise and embedded MCPs.
 
-Built-in skills: `playwright`, `playwright-cli`, `agent-browser`, `dev-browser`, `git-master`, `frontend`, `review-work`, `remove-ai-slops`, `init-deep`, `debugging`, `security-research`, `security-review`, `visual-qa`, `team-mode`. The `team-mode` skill is only rendered when `team_mode.enabled` is true.
+Selected built-in skills: `playwright`, `playwright-cli`, `dev-browser`, `git-master`, `frontend`, `review-work`, `remove-ai-slops`, `init-deep`, `debugging`, `security-research`, `security-review`, `visual-qa`, `team-mode`. The `team-mode` skill is only rendered when `team_mode.enabled` is true.
 
 Disable built-in skills: `{ "disabled_skills": ["playwright"] }`
 
@@ -719,15 +719,17 @@ Available commands: `goal`, `refactor`, `ulw-execute`, `stop-continuation`, `rem
 | Provider               | Interface | Installation                                        |
 | ---------------------- | --------- | --------------------------------------------------- |
 | `playwright` (default) | MCP tools | Auto-installed via npx                              |
-| `agent-browser`        | Bash CLI  | `bun add -g agent-browser && agent-browser install` |
+| `agent-browser`        | Legacy provider | Prefer the script-based guidance below |
 | `dev-browser`          | Skill     | Uses persistent dev-browser state                   |
 | `playwright-cli`       | Bash CLI  | Uses the token-efficient `@playwright/cli`           |
 
-Switch provider:
-
-```json
-{ "browser_automation_engine": { "provider": "agent-browser" } }
-```
+Browser skills use two tiers from js eval: `new Bun.WebView()` on Bun >= 1.4
+(macOS default; Linux/Windows require installed Chrome/Chromium/Edge), otherwise
+write and run a `playwright-core` script against local Chrome (`channel: "chrome"`).
+Use the script tier for Chrome semantics, stealth, traces, and authenticated
+profiles; `launchPersistentContext` receives a CLONED profile, never the live one.
+Codex uses `browser:control-in-app-browser` for ordinary page control. These are
+skill execution paths, not new values of `browser_automation_engine.provider`.
 
 ### Tmux Integration
 
