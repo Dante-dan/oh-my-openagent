@@ -2,6 +2,8 @@
 
 ## [0.1.0] - unreleased
 
+- Status nextActions and missing-plan recovery now follow the calling surface: omo-senpi teaches the eval SDK methods and current attempt directory without asking for a driver snapshot; LazyCodex retains its existing CLI guidance byte-for-byte.
+
 - Async `.state.lock` holders now keep their file descriptor open and refresh a 30-second lease through it. An expired lease can be reclaimed even while its process remains alive; sync hooks and older lease-less records retain dead-pid-only ownership. Windows filesystems that refuse unlinking an open lock fail closed. Interrupted kernels can recover after lease expiry without deleting a live owner's lock.
 - Plan and audit mutations publish one immutable `revisions/<revision>.json` record using create-only hard links. Published revision paths are never deleted or reused.
 - `ULW_LOOP_PUBLISH_CONFLICT` retries the complete mutation once while its lock token remains owned.
