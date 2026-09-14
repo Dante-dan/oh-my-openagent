@@ -11,7 +11,7 @@ import { activeStatus, createLogger, sessionEventCtx } from "./ulw-loop.test-sup
 
 const CONTINUATION_PROMPT_TEXT = [
   "Continue the active ulw-loop run.",
-  'Call `tool.omo_agent_toolkit({ operation: "status" })` in this session, inspect the active incomplete goals and the structured nextActions, and keep working until the run is complete or safely checkpointed.',
+  'In a JS eval cell run: const { agentToolkit } = await import(`${env("OMO_AGENT_TOOLKIT_SDK_ROOT")}/sdk.js`); print(await agentToolkit.status()). Inspect the active incomplete goals and the structured nextActions, and keep working until the run is complete or safely checkpointed.',
 ].join("\n")
 
 describe("omo-senpi ulw-loop continuation routing through the idle coordinator", () => {

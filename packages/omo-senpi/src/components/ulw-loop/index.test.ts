@@ -77,7 +77,9 @@ describe("omo-senpi ulw-loop continuation", () => {
     if (!isTransformResult(transformed)) throw new Error("expected transform result")
     expect(transformed.text).toContain("continue")
     expect(transformed.text).toContain("<omo-senpi-ulw-loop>")
-    expect(transformed.text).toContain('tool.omo_agent_toolkit({ operation: "status" })')
+    expect(transformed.text).toContain('await import(`${env("OMO_AGENT_TOOLKIT_SDK_ROOT")}/sdk.js`)')
+    expect(transformed.text).toContain("agentToolkit.status()")
+    expect(transformed.text).not.toMatch(/tool\.omo_agent_toolkit/)
   })
 
   it("#given active incomplete ulw-loop status #when idle user input arrives #then typed text is unchanged", async () => {
@@ -108,6 +110,10 @@ describe("omo-senpi ulw-loop continuation", () => {
         options: { triggerTurn: true, deliverAs: "followUp" },
       },
     ])
+    const continuation = pi.messages[0]?.message["content"]
+    if (typeof continuation !== "string") throw new Error("expected a string continuation prompt")
+    expect(continuation).toContain('await import(`${env("OMO_AGENT_TOOLKIT_SDK_ROOT")}/sdk.js`)')
+    expect(continuation).not.toMatch(/tool\.omo_agent_toolkit/)
   })
 
   it("#given incomplete goals #when continuation repeats #then cap stops the 9th consecutive continuation", async () => {
