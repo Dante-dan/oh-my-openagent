@@ -189,11 +189,13 @@ Use steering only for structured evidence-backed mutation. Reject natural-langua
 | split_subgoal | Story too large; needs decomposition | `targetGoalId`, `childGoals` (array of `{ title, objective }`), `evidence`, `rationale` |
 | reorder_pending | Discovered dependency order | `pendingOrder` (array of ids), `evidence`, `rationale` |
 | revise_pending_wording | Title/objective ambiguous | `targetGoalId`, `revisedTitle?`, `revisedObjective?`, `evidence`, `rationale` |
-| revise_criterion | Criterion lacks observable PASS evidence | `targetGoalId`, `criterionId`, `scenario?`, `expectedEvidence?`, `evidence`, `rationale` |
+| revise_criterion | Criterion lacks observable PASS evidence; see typed-SDK limitation below | `targetGoalId`, `criterionId`, `evidence`, `rationale` |
 | annotate_ledger | Audit-only note | `evidence`, `rationale` |
 | mark_blocked_superseded | Old story replaced by new evidence | `targetGoalId`, `childGoals?` (replacements), `evidence`, `rationale` |
 
-Call form: `agentToolkit.steer({ kind: "<kind>", source: "finding", ...fields })`, for example `agentToolkit.steer({ kind: "annotate_ledger", source: "finding", evidence: "<what was observed>", rationale: "<what it changes>" })`. Each call applies one proposal atomically: it is accepted whole or rejected with `rejectedReasons` and no partial plan mutation. Discovered several changes together? Issue one `steer` call per proposal, in dependency order.
+`revise_criterion` has no criterion-update payload fields in the current `SteerArgs` type. The row lists only its typed context fields, not a runnable update: this mutation cannot currently be expressed through the typed SDK. Do not invent update fields.
+
+Call form for the other kinds: `agentToolkit.steer({ kind: "<kind>", source: "finding", ...fields })`, for example `agentToolkit.steer({ kind: "annotate_ledger", source: "finding", evidence: "<what was observed>", rationale: "<what it changes>" })`. Each call applies one proposal atomically: it is accepted whole or rejected with `rejectedReasons` and no partial plan mutation. Discovered several changes together? Issue one `steer` call per proposal, in dependency order.
 
 Validation batches are optional aggregate-mode review boundaries declared at create time with `createGoals({ brief, validationBatchesJson })`. A batch-final member requires all other members resolved, all member criteria pass, and a member-spanning quality gate; split/supersede steering keeps batch membership updated.
 Structured prompt directives accepted: `OMO_ULW_LOOP_STEER: { ... }` and `omo.ulw-loop.steer: {...}` in a prompt, or `agentToolkit.steer({...})` from a cell.
