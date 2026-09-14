@@ -203,6 +203,10 @@
     --dur-pulse: 2200ms;
     --dur-wave: 12s;
     --lit-blur: 4px;
+    --lit-read-hold: 18vh;
+    --lit-follow-fade: 22vh;
+    --lit-follow-gap: 1.25em;
+    --lit-follow-rise: var(--space-6);
 
     /* Legacy shadcn variables remapped onto the ledger tokens */
     --background: var(--ink-0);
@@ -802,20 +806,45 @@
      glyphs and between words instead of flipping. */
   .lit-progress {
     --lit-p: 0;
+    --lit-f: 0;
+    timeline-scope: --lit-body;
+  }
+  .lit-text {
+    white-space: pre-line;
+    view-timeline: --lit-body block;
   }
   @supports (animation-timeline: view()) {
     .lit-progress.lit-scroll {
       animation: lit-progress linear both;
-      animation-timeline: view();
+      animation-timeline: --lit-body;
       animation-range-start: cover 20vh;
-      animation-range-end: contain 50vh;
+      animation-range-end: cover calc(100% - 50vh);
+    }
+    .lit-scroll .lit-follow {
+      animation: lit-follow linear both;
+      animation-timeline: --lit-body;
+      animation-range-start: cover
+        calc(100% - 50vh + max(var(--lit-read-hold), var(--lit-follow-gap)));
+      animation-range-end: cover
+        calc(
+          100% - 50vh + max(var(--lit-read-hold), var(--lit-follow-gap)) + var(--lit-follow-fade)
+        );
     }
   }
-  /* The follow-up line rises in over the last stretch (progress 0.7 → 1) as it nears mid-viewport. */
   .lit-follow {
-    --lit-f: clamp(0, calc((var(--lit-p) - 0.7) / 0.3), 1);
+    margin-top: var(--lit-follow-gap);
     opacity: var(--lit-f);
-    transform: translateY(calc((1 - var(--lit-f)) * 24px));
+    transform: translateY(calc((1 - var(--lit-f)) * var(--lit-follow-rise)));
+  }
+  @keyframes lit-follow {
+    from {
+      opacity: 0;
+      transform: translateY(var(--lit-follow-rise));
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
   }
   @keyframes lit-progress {
     from {
@@ -1081,7 +1110,9 @@
       --lit-p: 1;
       animation: none;
     }
-    .lit-follow {
+    .lit-follow,
+    .lit-scroll .lit-follow {
+      animation: none;
       opacity: 1;
       transform: none;
     }

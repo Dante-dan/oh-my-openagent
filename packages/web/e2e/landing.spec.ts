@@ -1,5 +1,7 @@
 import { test, expect } from "@playwright/test"
 
+import { scrollSecret } from "./secret-reading-state"
+
 const STORY_SECTIONS = [
   "secret",
   "ultrawork",
@@ -105,28 +107,13 @@ test.describe("Landing Page", () => {
     await page.evaluate(() => document.fonts.ready)
 
     const sampleAt = async (target: number) => {
-      await litText.evaluate(async (node, progress) => {
-        const rect = node.getBoundingClientRect()
+      const top = await litText.evaluate((node, progress) => {
+        const rect = node.querySelector(".lit-text")!.getBoundingClientRect()
         const startTop = innerHeight * 0.8
         const endTop = innerHeight * 0.5 - rect.height
-        await new Promise<void>((resolve, reject) => {
-          const timeout = setTimeout(() => reject(new Error("Scroll did not complete")), 5000)
-          document.addEventListener(
-            "scrollend",
-            () => {
-              requestAnimationFrame(() => {
-                clearTimeout(timeout)
-                resolve()
-              })
-            },
-            { once: true },
-          )
-          scrollTo({
-            top: scrollY + rect.top - startTop + progress * (startTop - endTop),
-            behavior: "instant",
-          })
-        })
+        return scrollY + rect.top - startTop + progress * (startTop - endTop)
       }, target)
+      await page.evaluate(scrollSecret, top)
       return litText.evaluate((node) => ({
         progress: Number.parseFloat(getComputedStyle(node).getPropertyValue("--lit-p")),
         partialWords: Array.from(node.querySelectorAll(".lit-word")).filter((word) => {
