@@ -28,6 +28,14 @@ describe.each(surfaces)("#given a completed plan on %s", (surface) => {
 		const before = await readUlwLoopPlan(cwd, scope);
 		const response = await toolkit.createGoals({ brief: "- replacement" });
 		expect(response).toMatchObject({ ok: false, error: { code: "ULW_LOOP_PLAN_EXISTS_COMPLETE" } });
+		if (response.ok) throw new Error("expected createGoals to fail");
+		if (surface === "omo-senpi") {
+			expect(response.error.message).toMatch(/agentToolkit\.createGoals\(/);
+			expect(response.error.message).not.toMatch(/omo-agent-toolkit ulw-loop/);
+		} else {
+			expect(response.error.message).toMatch(/omo-agent-toolkit ulw-loop create-goals/);
+			expect(response.error.message).not.toMatch(/agentToolkit\./);
+		}
 		expect(await readUlwLoopPlan(cwd, scope)).toEqual(before);
 		expect((await toolkit.createGoals({ brief: "- replacement", force: true })).ok).toBe(true);
 		expect((await readUlwLoopPlan(cwd, scope)).goals[0]?.id).toBe("G001-replacement");
