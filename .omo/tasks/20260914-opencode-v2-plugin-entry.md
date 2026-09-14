@@ -8,7 +8,7 @@
 - [x] Run the focused regression and record the exact result.
 - [x] Run repository typecheck, build, and root tests; record pass/failure honestly.
 - [x] Run isolated real-OpenCode QA and record loader behavior plus DB-isolation evidence.
-- [ ] Commit only task files, implementation, regression, documentation, and new QA evidence.
-- [ ] Recheck ownership, exclusions, duplicate PRs, template, and current remote state under the public-action lock.
-- [ ] Push to Dante-dan's fork and create a draft PR.
-- [ ] Record the post-PR private-review question and tracker milestones without publicizing the private workflow.
+- [x] Commit only task files, implementation, regression, documentation, and new QA evidence.
+- [x] Recheck ownership, exclusions, duplicate PRs, template, and current remote state under the public-action lock.
+- [x] Push to Dante-dan's fork and create a draft PR.
+- [x] Record the post-PR private-review question and tracker milestones without publicizing the private workflow.
