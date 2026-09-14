@@ -8,6 +8,7 @@ import {
 import { beforePlanMutation, commit } from "./plan-commit.js";
 import { appendGoalToPlan, deriveGoalCandidates, makeGoal } from "./plan-goal-factory.js";
 import { planExists, readUlwLoopPlan, withUlwLoopMutationLock } from "./plan-io.js";
+import type { UlwLoopToolkitSurface } from "./surface.js";
 import type {
 	UlwLoopCodexGoalMode,
 	UlwLoopItem,
@@ -60,6 +61,7 @@ export async function createUlwLoopPlan(
 	repoRoot: string,
 	args: { brief: string; codexGoalMode?: UlwLoopCodexGoalMode; force?: boolean; validationBatchesJson?: string },
 	scope?: UlwLoopScope,
+	surface: UlwLoopToolkitSurface = "lazycodex",
 ): Promise<UlwLoopPlan> {
 	return withUlwLoopMutationLock(repoRoot, scope, async () => {
 		let existing: UlwLoopPlan | undefined;
@@ -71,7 +73,7 @@ export async function createUlwLoopPlan(
 			}
 		}
 		if (!args.force && existing !== undefined) {
-			if (isUlwLoopDone(existing)) throw completedPlanExistsError(scope);
+			if (isUlwLoopDone(existing)) throw completedPlanExistsError(scope, surface);
 			throw new UlwLoopError(
 				`Refusing to overwrite existing ${ulwLoopGoalsRelativePath(scope)}; pass --force to recreate it.`,
 				"ULW_LOOP_PLAN_EXISTS",
@@ -107,12 +109,18 @@ export async function createUlwLoopPlan(
 	});
 }
 
-function completedPlanExistsError(scope?: UlwLoopScope): UlwLoopError {
+function completedPlanExistsError(scope: UlwLoopScope | undefined, surface: UlwLoopToolkitSurface): UlwLoopError {
 	return new UlwLoopError(
 		[
 			`Existing ulw-loop aggregate is already complete at ${ulwLoopGoalsRelativePath(scope)}.`,
-			"Start a new run with `omo-agent-toolkit ulw-loop create-goals --session-id <new-id> ...` to isolate fresh state.",
-			"Use --force only when you intentionally want to overwrite the completed evidence.",
+			...(surface === "omo-senpi"
+				? [
+						"Start a new run under a fresh session id (a new senpi session) or call agentToolkit.createGoals({ brief, force: true }) to recreate.",
+					]
+				: [
+						"Start a new run with `omo-agent-toolkit ulw-loop create-goals --session-id <new-id> ...` to isolate fresh state.",
+						"Use --force only when you intentionally want to overwrite the completed evidence.",
+					]),
 		].join(" "),
 		"ULW_LOOP_PLAN_EXISTS_COMPLETE",
 	);

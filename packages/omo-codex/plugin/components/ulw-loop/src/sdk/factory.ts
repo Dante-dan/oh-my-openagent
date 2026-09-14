@@ -168,7 +168,7 @@ export function createAgentToolkit(context: ToolkitContext, deps: AgentToolkitDe
 			}
 		},
 		help: () => invoke("help", async () => ULW_LOOP_MANIFEST),
-		createGoals: (args) => invoke("create-goals", () => createUlwLoopPlan(context.cwd, args, scope)),
+		createGoals: (args) => invoke("create-goals", () => createUlwLoopPlan(context.cwd, args, scope, context.surface)),
 		status: () =>
 			invoke("status", async () => {
 				const plan = await readUlwLoopPlan(context.cwd, scope);
