@@ -4,6 +4,7 @@ import { describe, expect, test } from "bun:test"
 import { readFileSync, readdirSync } from "node:fs"
 
 import { PLATFORMS } from "./build-binaries"
+import { readWorkflowSteps, receiptGateScenarios, runReceiptGate } from "./receipt-gate.fixture"
 
 const publishWorkflowPath = new URL("../.github/workflows/publish.yml", import.meta.url)
 const publishPlatformWorkflowPath = new URL("../.github/workflows/publish-platform.yml", import.meta.url)
@@ -242,21 +243,40 @@ describe("release and platform publish workflows", () => {
 })
 
 describe("release binary asset lane in the platform publish workflow", () => {
-  test("gates runnable binary uploads on worker and compiled RPC/extension probes", () => {
+  test("requires the receipt gate before uploading a newly built release binary", () => {
     // given
-    const workflow = readFileSync(publishPlatformWorkflowPath, "utf8")
+    const steps = readWorkflowSteps("publish-platform.yml", "build")
     // when
-    const gate = sliceWorkflowSection(workflow, "      - name: Smoke compiled workers and RPC", "      - name: Upload release binary artifact")
-    // then
-    expect(gate).toContain("if: steps.release-assets.outputs.binary_exists != 'true'")
-    expect(gate).toContain("bun test script/senpi-worker-compile.test.ts")
-    expect(gate).toContain("--case rpc --case extension")
-    expect(gate).toContain("jq -e")
-    expect(gate).toContain('[.cases[].case] == ["rpc", "extension"]')
-    expect(gate).toContain("darwin-arm64|linux-x64|linux-x64-baseline|windows-x64|windows-x64-baseline)")
-    expect(gate).not.toContain("continue-on-error")
-    expect(workflow.indexOf("node packages/omo-native/bin/senpi-patch.mjs")).toBeGreaterThan(workflow.indexOf("bun install --frozen-lockfile --ignore-scripts"))
-    expect(workflow.indexOf("node packages/omo-native/bin/senpi-patch.mjs")).toBeLessThan(workflow.indexOf("      - name: Build release binary"))
+    const build = steps.findIndex((step) => step.run?.includes("script/build-omo-binary.ts"))
+    const gate = steps.findIndex((step) => step.run?.includes("script/qa/dependency-audit-capture.ts"))
+    const upload = steps.findIndex((step) => step.uses?.startsWith("actions/upload-artifact@") && step.with?.name === "release-binary-${{ matrix.platform }}")
+    // then: only dependencies and scheduling policy are fixed, not step labels.
+    expect(build).toBeGreaterThanOrEqual(0)
+    expect(gate).toBeGreaterThan(build)
+    expect(upload).toBeGreaterThan(gate)
+    expect(steps[gate]?.if).toBe("steps.release-assets.outputs.binary_exists != 'true'")
+    expect(steps[upload]?.if).toBe(steps[gate]?.if)
+    expect(steps[gate]?.["continue-on-error"]).not.toBe(true)
+  })
+
+  describe.each(["darwin-arm64", "linux-x64", "linux-x64-baseline", "windows-x64", "windows-x64-baseline"])("native receipt gate for %s", (target) => {
+    test.each([
+      ...receiptGateScenarios(["rpc", "extension"]),
+      ...receiptGateScenarios(["rpc", "extension"]).filter((scenario) => scenario.accepted).map((scenario) => ({ ...scenario, name: "failed worker test with passing receipts", workerExit: 17, accepted: false })),
+    ])("propagates failure when given $name", (scenario) => {
+      // given
+      const gate = readWorkflowSteps("publish-platform.yml", "build").find((step) => step.run?.includes("script/qa/dependency-audit-capture.ts"))
+      if (gate?.run === undefined) throw new Error("missing release receipt gate")
+      // when
+      const result = runReceiptGate(gate.run, scenario, target)
+      // then
+      expect(result.status === 0, result.stderr).toBe(scenario.accepted)
+      expect(result.reached).toBe(scenario.accepted)
+      if (scenario.accepted) {
+        expect(result.captureArgs.filter((_, index, args) => args[index - 1] === "--case")).toEqual(["rpc", "extension"])
+        expect(result.captureArgs).toContain(`.omo/release-binaries/omo-${target}${target.startsWith("windows-") ? ".exe" : ""}`)
+      }
+    }, 25_000)
   })
 
   test("plumbs omo_ai_version into the release-binary build", () => {

@@ -9,6 +9,7 @@ import {
   mkdtempSync,
   readFileSync,
   readdirSync,
+  realpathSync,
   rmSync,
   statSync,
   truncateSync,
@@ -17,6 +18,7 @@ import {
 import { tmpdir } from "node:os"
 import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
+import { z } from "zod"
 import {
   assertBinarySizeBudget,
   assertEngineGraphBundled,
@@ -411,24 +413,36 @@ describe("plugin staging isolation guard", () => {
 })
 
 describe("engine graph bundling", () => {
-  test("#given release compile argv #when inspected #then splitting and name-preserving full minification are enabled", () => {
-    // given
-    const source = readFileSync(join(scriptDir, "build-omo-binary.ts"), "utf8")
-    // when: inspect only the argv consumed by the production compile, not probe flags.
-    const argv = /compileOutput\s*=\s*runCommandCaptured\(\s*"bun",\s*\[([\s\S]*?)\]/.exec(source)?.[1]
-    if (argv === undefined) throw new Error("release compile argv is missing")
-    const literals = [...argv.matchAll(/"([^"\n]+)"/g)].map((match) => match[1])
-    // then
-    expect(literals).toEqual([
-      "build", "--compile", "--splitting", "--minify", "--keep-names",
-      "--compile-autoload-package-json", "--no-compile-autoload-dotenv",
-      "--no-compile-autoload-bunfig", "--outfile",
-    ])
-    expect(literals).not.toContain("--minify-whitespace")
-    expect(argv.indexOf("compileEntry,")).toBeLessThan(argv.indexOf("...senpiWorkerCompileArgs(repoRoot)"))
-    expect(argv).toContain("`--asset=${stageDir}`")
-    expect(argv).toContain("`--target=${target.bunTarget}`")
-  })
+  test("#given a release build #when it reaches the compiler #then flags and both ordered entries satisfy the contract", () => {
+    // given: intercept only the target compiler; staging and the asset probe run normally.
+    const root = makeTempDir("omo-compile-argv-")
+    const capture = join(root, "argv.json")
+    try {
+      // when
+      const result = spawnSync(process.execPath, [join(scriptDir, "release-compile-argv.fixture.ts"), capture, root], {
+        cwd: repoRoot, encoding: "utf8", timeout: 120_000,
+      })
+      // then: independent flags may move; only entry order determines the executable's main.
+      expect(result.status, result.stderr).toBe(0)
+      const { command, args } = z.object({ command: z.string(), args: z.array(z.string()) }).parse(JSON.parse(readFileSync(capture, "utf8")))
+      expect(command).toBe("bun")
+      expect(args[0]).toBe("build")
+      for (const flag of ["--compile", "--target=bun-linux-x64", "--splitting", "--minify", "--keep-names", "--compile-autoload-package-json", "--no-compile-autoload-dotenv", "--no-compile-autoload-bunfig"]) {
+        expect(args).toContain(flag)
+      }
+      expect(args).not.toContain("--minify-whitespace")
+      const main = args.indexOf(join(repoRoot, "packages/omo-native/compile-entry.ts"))
+      const worker = args.indexOf(realpathSync(join(repoRoot, "node_modules/@code-yeongyu/senpi/dist/modes/rpc/session-worker.js")))
+      expect(main).toBeGreaterThanOrEqual(0)
+      expect(worker).toBeGreaterThanOrEqual(0)
+      expect(main).toBeLessThan(worker)
+      expect(args).toContain(`--root=${repoRoot}`)
+      expect(args.some((arg) => arg.startsWith("--define=SENPI_RPC_SESSION_WORKER_ENTRY="))).toBe(true)
+      expect(args.some((arg) => arg.startsWith("--asset="))).toBe(true)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  }, 150_000)
 
   test("#given recorded splitting output #when parsed #then the observed 4476 modules are extracted", () => {
     // given: recorded two-entry splitting probe; not a production count pin.

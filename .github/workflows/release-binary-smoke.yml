@@ -8,6 +8,13 @@ on:
       - script/senpi-worker-compile*.ts
       - packages/omo-native/**
       - script/qa/dependency-audit-*.ts
+      - script/qa/dependency-audit/**
+      - script/qa/fixtures/dependency-audit/**
+      - script/release-compile-argv.fixture.ts
+      - script/receipt-gate.fixture.ts
+      - script/release-binary-smoke-workflow.test.ts
+      - script/publish-release-platform-workflow.test.ts
+      - .github/workflows/publish-platform.yml
       - package.json
       - bun.lock
       - .github/workflows/release-binary-smoke.yml
