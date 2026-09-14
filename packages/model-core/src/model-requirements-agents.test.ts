@@ -170,24 +170,29 @@ describe("AGENT_MODEL_REQUIREMENTS", () => {
         })
   })
 
-  test("metis uses Opus 5 high before Kimi K3 low", () => {
+  test("metis uses Fable 5-1 max before Opus 5 max and Kimi K3 max", () => {
     // given
     const metis = AGENT_MODEL_REQUIREMENTS["metis"]
 
     // when
-    const [primary, kimiFallback] = metis.fallbackChain
+    const [fable, opus, kimi] = metis.fallbackChain
 
     // then
-    expect(metis.fallbackChain).toHaveLength(2)
-    expect(primary).toEqual({
+    expect(metis.fallbackChain).toHaveLength(3)
+    expect(fable).toEqual({
+          providers: ["anthropic", "github-copilot", "opencode"],
+          model: "claude-fable-5-1",
+          variant: "max",
+        })
+    expect(opus).toEqual({
           providers: ["anthropic", "github-copilot", "opencode"],
           model: "claude-opus-5",
-          variant: "high",
+          variant: "max",
         })
-    expect(kimiFallback).toEqual({
+    expect(kimi).toEqual({
           providers: ["opencode-go", "kimi-for-coding", "moonshotai", "opencode"],
           model: "kimi-k3",
-          variant: "low",
+          variant: "max",
         })
   })
 
