@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "bun:test"
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs"
+import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
@@ -169,6 +169,18 @@ function toolNames(pi: FakeExtensionAPI): string[] {
 }
 
 describe("omo-senpi task component wiring", () => {
+  it("#given an empty project #when the task component registers and the session starts without task activity #then no state directory is created", async () => {
+    const project = tempProject()
+    const pi = new FakeExtensionAPI()
+    const logger = createLogger()
+
+    await createTaskComponent({ resolveCwd: () => project }).register(pi, ctxFor(pi, logger))
+    expect(readdirSync(project)).toEqual([])
+
+    await pi.dispatch("session_start", { type: "session_start", reason: "startup" }, {})
+    expect(readdirSync(project)).toEqual([])
+  })
+
   it("#given an explicit team member process #when the task component registers #then no lead task surface is wired", async () => {
     // given
     const previousMember = process.env.SENPI_TASK_MEMBER
