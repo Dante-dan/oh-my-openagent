@@ -4,6 +4,7 @@ import { tmpdir } from "node:os"
 import { dirname, join, resolve } from "node:path"
 import { spawnSync } from "node:child_process"
 import { fileURLToPath } from "node:url"
+import { installOAuthLoginTargets } from "./senpi-patch-fixture"
 
 const PACKAGE_ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)))
 const PATCH_SCRIPT = join(PACKAGE_ROOT, "bin", "senpi-patch.mjs")
@@ -44,6 +45,7 @@ function createFixture(claudeCodeVersion: string): Fixture {
   const anthropicMessages = join(root, BUNDLED_ANTHROPIC_MESSAGES)
   mkdirSync(dirname(anthropicMessages), { recursive: true })
   writeFileSync(anthropicMessages, anthropicMessagesSource(claudeCodeVersion))
+  installOAuthLoginTargets(root)
   return { root, anthropicMessages }
 }
 

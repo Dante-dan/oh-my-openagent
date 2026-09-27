@@ -6,6 +6,7 @@ import { spawnSync } from "node:child_process"
 import { fileURLToPath, pathToFileURL } from "node:url"
 
 import { prepareCompileSafeEngine } from "../bin/lib/compile-safe-engine.js"
+import { installOAuthLoginTargets } from "./senpi-patch-fixture"
 
 const PACKAGE_ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)))
 const PATCH_SCRIPT = join(PACKAGE_ROOT, "bin", "senpi-patch.mjs")
@@ -148,6 +149,7 @@ describe("compile-safe engine preparation", () => {
           join(root, "dist", "modes", "rpc", "rpc-mode.js"),
           readFileSync(new URL("./modes/rpc/rpc-mode.js", import.meta.resolve("@code-yeongyu/senpi")), "utf8"),
         )
+        installOAuthLoginTargets(root)
         const result = spawnSync("node", [PATCH_SCRIPT], {
           encoding: "utf8",
           env: { ...process.env, OMO_SENPI_PATCH_ROOT: root },

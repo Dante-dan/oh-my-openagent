@@ -4,6 +4,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { spawnSync } from "node:child_process"
 import { fileURLToPath } from "node:url"
+import { installOAuthLoginTargets } from "./senpi-patch-fixture.ts"
 
 const engineEntry = import.meta.resolve("@code-yeongyu/senpi")
 // The source map preserves upstream input even after postinstall prepared the installed JS.
@@ -65,6 +66,7 @@ function engineFixture(source = rpcSource) {
   const apiDir = join(root, "node_modules", "@earendil-works", "pi-ai", "dist", "api")
   mkdirSync(apiDir, { recursive: true })
   writeFileSync(join(apiDir, "anthropic-messages.js"), 'const claudeCodeVersion = "2.1.251";\n')
+  installOAuthLoginTargets(root)
   return { root, rpcPath }
 }
 
