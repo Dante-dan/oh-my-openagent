@@ -32,6 +32,10 @@ export type RpcRunnerSpec = {
   // registered is reproducible in the detached child without inheriting the parent's whole package set.
   readonly extensions?: readonly string[]
   readonly memberEnv?: Readonly<Record<string, string>>
+  // The child's own place in the task tree. A process child boots its own task engine, which reads
+  // these back (per-child env or daemon session context) so ITS spawns count from here, not from 0.
+  readonly depth?: number
+  readonly root_session_id?: string
 }
 
 export type ChildEventListener = (event: AgentSessionEvent) => void
@@ -85,6 +89,8 @@ export type RpcChildHandle = ChildHandle & {
   readonly spawnSpec?: RpcSpawnSpec
   terminalAssistantMessage?(): RpcTerminalAssistantMessage | undefined
   wasAbortedByUser?(): boolean
+  // Fires when the child starts a run on its own after its turn settled (omo#9069).
+  onSelfResumed?(listener: () => void): () => void
   switchSession?(sessionPath: string): Promise<RpcSwitchSessionResult>
   getEntries?(since?: string): Promise<RpcEntriesResult>
   terminate(options?: TerminateOptions): Promise<void>

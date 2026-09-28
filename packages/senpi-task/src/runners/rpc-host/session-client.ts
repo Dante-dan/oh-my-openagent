@@ -1,9 +1,11 @@
 import type { RpcSessionState, RpcTransportGoneError } from "@code-yeongyu/senpi"
 import { log } from "@oh-my-opencode/utils"
 
-import type { SenpiHostProtocolInfo } from "../../lazy/senpi-barrel"
+import { loadSenpiBarrel, type SenpiHostProtocolInfo } from "../../lazy/senpi-barrel"
 import { buildAutoUiResponse, type AutoAnswerableUiRequest } from "../rpc/ui-auto-answer"
 import type { ChildEventListener, RpcEntriesResult, RpcSwitchSessionResult } from "../types"
+import { socketAcceptsConnection } from "./busy-host"
+import { HostUnavailableError } from "./daemon"
 import {
   assertHostUsable,
   createSenpiRpcClient,
@@ -55,6 +57,7 @@ export interface HostSessionClosed {
 export interface HostSessionClientPorts {
   readonly createClient?: HostRpcClientFactory
   readonly probeProtocolInfo?: HostProtocolProbe
+  readonly socketAccepts?: (socketPath: string) => Promise<boolean>
 }
 
 export interface HostSessionClientOptions {
@@ -78,6 +81,7 @@ export class HostSessionClient {
   readonly transportGone: Promise<RpcTransportGoneError>
   private readonly createClient: HostRpcClientFactory
   private readonly probeProtocolInfo: HostProtocolProbe
+  private readonly socketAccepts: (socketPath: string) => Promise<boolean>
   private readonly transportLoss = Promise.withResolvers<RpcTransportGoneError>()
   private readonly eventListeners = new Set<ChildEventListener>()
   private readonly parkedListeners = new Set<(event: HostSessionParked) => void>()
@@ -91,6 +95,7 @@ export class HostSessionClient {
     this.socketPath = options.socketPath
     this.createClient = options.ports?.createClient ?? createSenpiRpcClient
     this.probeProtocolInfo = options.ports?.probeProtocolInfo ?? probeWithEngine
+    this.socketAccepts = options.ports?.socketAccepts ?? socketAcceptsConnection
     this.transportGone = this.transportLoss.promise
   }
 
@@ -113,7 +118,14 @@ export class HostSessionClient {
   }
 
   async open(input: HostSessionOpenInput): Promise<OpenedHostSession> {
-    const identity = assertHostUsable(await this.probeProtocolInfo(this.socketPath))
+    const probed = await this.probeProtocolInfo(this.socketPath)
+    if (probed === undefined && (await this.socketAccepts(this.socketPath))) {
+      throw new HostUnavailableError("host_busy", {
+        fallbackAllowed: false,
+        detail: "the daemon accepts connections but did not answer get_protocol_info",
+      })
+    }
+    const identity = assertHostUsable(probed)
     const client = await this.createClient({
       socketPath: this.socketPath,
       onDisconnect: (error) => this.handleTransportLoss(error),
@@ -124,6 +136,15 @@ export class HostSessionClient {
     const opened = await client.openSession(toWireOpen(input)).catch(async (error: unknown) => {
       this.client = undefined
       await client.stop()
+      // The host went away with the open in flight: that is an unreachable host, not a session the
+      // host refused, so the start failure carries the host reason instead of a bare session error.
+      const { isTransportGoneError } = await loadSenpiBarrel()
+      if (isTransportGoneError(error)) {
+        throw new HostUnavailableError("host_unreachable", {
+          fallbackAllowed: false,
+          detail: `the host went away during open_session: ${error instanceof Error ? error.message : String(error)}`,
+        })
+      }
       throw toOpenFailure(error, input.sessionPath)
     })
     this.identity = identity

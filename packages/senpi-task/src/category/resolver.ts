@@ -209,7 +209,7 @@ export function resolveAvailableCategoryNames<TModel extends SenpiModelPort>(
 }
 
 // Chain providers with no model in the live registry, in chain order, deduplicated.
-function missingChainProviders(
+export function missingChainProviders(
   chain: readonly DelegateFallbackEntry[],
   availableModels: readonly string[],
 ): readonly string[] {
@@ -251,7 +251,7 @@ function getOwnRecordValue<TValue>(
   return Object.hasOwn(record, key) ? record[key] : undefined
 }
 
-function parseAvailableModels(models: unknown): AvailableModelsParseResult {
+export function parseAvailableModels(models: unknown): AvailableModelsParseResult {
   if (!Array.isArray(models)) {
     return { models: [], validContainer: false }
   }

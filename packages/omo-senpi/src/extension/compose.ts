@@ -34,10 +34,12 @@ function consoleArgs(message: string, details: unknown): [string] | [string, unk
   return details === undefined ? [message] : [message, details]
 }
 
-// Every level writes to stderr. A child's stdout is its deliverable - the reflection worker's
-// report is read back from it - so an info line on stdout became the "report" (#8564).
+// warn/error always write to stderr. info is silent unless OMO_DEBUG is set (then also stderr).
+// A child's stdout is its deliverable - the reflection worker's report is read back from it -
+// so an info line on stdout became the "report" (#8564).
 const defaultLogger: ComponentLogger = {
   info(message, details) {
+    if (!process.env.OMO_DEBUG) return
     console.error(...consoleArgs(message, details))
   },
   warn(message, details) {
@@ -143,7 +145,7 @@ export function composeOmoSenpiExtension(
     // as the idle coordinator: a session that ends before the gate opens must not start a
     // half-session's worth of work on a dead API.
     const startupDeferral = createStartupDeferral({
-      schedule: options.scheduleStartupWork ?? createFirstPaintScheduler({ on: (event, handler) => pi.on(event, handler) }),
+      schedule: options.scheduleStartupWork ?? createFirstPaintScheduler({ on: (event, handler, registrationOptions) => pi.on(event, handler, registrationOptions) }),
       onError: (label, error) => logger.warn("omo-senpi deferred startup work failed", { label, error }),
     })
     pi.on("session_shutdown", () => startupDeferral.retire())

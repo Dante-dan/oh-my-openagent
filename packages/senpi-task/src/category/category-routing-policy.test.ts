@@ -16,8 +16,8 @@ describe("Senpi category routing policy", () => {
     // then
     expect(routing).toEqual({
       visualEngineering: { model: "anthropic/claude-fable-5-1", variant: "max" },
-      quick: { model: "chatgpt-subscription/gpt-5.6-luna-fast", variant: "low" },
-      unspecifiedHigh: { model: "anthropic/claude-opus-5-5", variant: "max" },
+      quick: { model: "chatgpt-subscription/gpt-6-luna-fast", variant: "low" },
+      unspecifiedHigh: { model: "anthropic/claude-opus-5-5", variant: "medium" },
       unspecifiedLow: { model: "xiaomi/mimo-v2.6-pro", variant: "max" },
     })
   })
@@ -40,7 +40,7 @@ describe("Senpi category routing policy", () => {
         variant: "xhigh",
       },
       {
-        providers: ["chatgpt-subscription", "github-copilot", "opencode"],
+        providers: ["chatgpt-subscription", "openai", "github-copilot", "opencode"],
         model: "gpt-5.6-terra",
         variant: "high",
       },

@@ -6,16 +6,20 @@ import type { DelegateFallbackEntry } from "@oh-my-opencode/delegate-core"
 // no such providers):
 //   - kimi rungs carry BOTH provider ids ("kimi-coding" senpi registry id and the "kimi-for-coding"
 //     models.dev/opencode id); model-core carries "kimi-for-coding" only.
+//   - glm rungs use engine ids "zai" and "zai-coding-cn". model-core carries OpenCode's
+//     "zai-coding-plan"; `omo setup` imports that key as "zai" (#8799, #8824).
 //   - every claude-* rung is headed by "anthropic-subscription", senpi's Claude subscription lane
 //     (Claude Pro/Max). It serves the same model ids as "anthropic", so a machine that is logged in
 //     there AND holds an OpenCode Zen key must not be routed to the metered `opencode/claude-*` lane
 //     (#8051). Rung provider order IS the ranking in resolveModelForDelegateTask, so it goes first,
 //     mirroring senpi's own PROVIDER_PRECEDENCE in retry-fallback/expansion.ts.
-//   - no rung lists "openai", senpi's metered API-key lane; "chatgpt-subscription" (ChatGPT subscription)
-//     is the only OpenAI lane, so a machine holding both never routes delegated GPT work to API
-//     billing (#8300). Like vercel/openrouter, an API-key-only registry still resolves through the
-//     resolver's cross-provider fallthrough. model-core keeps "openai": it is OpenCode's single
-//     OpenAI provider id and already covers the ChatGPT login there.
+//   - every GPT rung lists "chatgpt-subscription" (ChatGPT subscription) first and "openai" (the
+//     API-key lane, or an OpenAI-compatible proxy configured under that id) directly after it.
+//     Rung provider order IS the ranking, so a machine holding both never routes delegated GPT work
+//     to API billing (#8300), while an `openai`-only machine still gets every GPT rung, both at
+//     selection and in the runtime fallback list, which walks listed providers only (#8734).
+//     model-core lists "openai" first: it is OpenCode's single OpenAI provider id and already
+//     covers the ChatGPT login there.
 export const CATEGORY_FALLBACK_CHAINS: Readonly<Record<string, readonly DelegateFallbackEntry[]>> = {
   "visual-engineering": [
     {
@@ -42,25 +46,28 @@ export const CATEGORY_FALLBACK_CHAINS: Readonly<Record<string, readonly Delegate
     }
   ],
   ultrabrain: [
-    { providers: ["chatgpt-subscription"], model: "gpt-6-astra", variant: "max" },
+    { providers: ["chatgpt-subscription", "openai"], model: "gpt-6-astra", variant: "max" },
     { providers: ["github-copilot"], model: "gpt-6-astra", variant: "max" },
-    { providers: ["chatgpt-subscription", "opencode"], model: "gpt-6-astra", variant: "max" },
-    { providers: ["chatgpt-subscription"], model: "gpt-5.6-sol", variant: "max" },
+    { providers: ["chatgpt-subscription", "openai", "opencode"], model: "gpt-6-astra", variant: "max" },
+    { providers: ["chatgpt-subscription", "openai"], model: "gpt-5.6-sol", variant: "max" },
     { providers: ["github-copilot"], model: "gpt-5.6-sol", variant: "max" },
-    { providers: ["chatgpt-subscription", "opencode"], model: "gpt-5.6-sol", variant: "max" }
+    { providers: ["chatgpt-subscription", "openai", "opencode"], model: "gpt-5.6-sol", variant: "max" }
   ],
   "deep-low": [
+    // The Fast (priority) tier exists only on the ChatGPT subscription lane; Copilot and OpenCode Zen
+    // serve plain gpt-5.6-sol, so the next rung keeps the lane open there at the same effort.
+    { providers: ["chatgpt-subscription", "openai"], model: "gpt-5.6-sol-fast", variant: "medium" },
     {
-      providers: ["chatgpt-subscription", "github-copilot", "opencode"],
+      providers: ["chatgpt-subscription", "openai", "github-copilot", "opencode"],
       model: "gpt-5.6-sol",
       variant: "medium",
     }
   ],
   "deep-high": [
     {
-      providers: ["chatgpt-subscription", "github-copilot", "opencode"],
+      providers: ["chatgpt-subscription", "openai", "github-copilot", "opencode"],
       model: "gpt-6-astra",
-      variant: "high",
+      variant: "xhigh",
     }
   ],
   artistry: [
@@ -70,19 +77,19 @@ export const CATEGORY_FALLBACK_CHAINS: Readonly<Record<string, readonly Delegate
       variant: "max",
     },
     {
-      providers: ["kimi-coding", "kimi-for-coding", "moonshotai", "opencode-go"],
-      model: "kimi-k3",
+      providers: ["anthropic-subscription", "anthropic", "anthropic-api", "github-copilot", "opencode"],
+      model: "claude-opus-5-5",
       variant: "max",
     },
     {
-      providers: ["anthropic-subscription", "anthropic", "anthropic-api", "github-copilot", "opencode"],
-      model: "claude-opus-5-5",
+      providers: ["kimi-coding", "kimi-for-coding", "moonshotai", "opencode-go"],
+      model: "kimi-k3",
       variant: "max",
     }
   ],
   quick: [
-    { providers: ["chatgpt-subscription"], model: "gpt-5.6-luna-fast", variant: "low" },
-    { providers: ["deepseek"], model: "deepseek-v4-flash", variant: "off" },
+    { providers: ["chatgpt-subscription", "openai"], model: "gpt-6-luna-fast", variant: "low" },
+    { providers: ["deepseek"], model: "deepseek-flash", variant: "off" },
     {
       providers: ["qwen-token-plan", "alibaba-token-plan", "bailian-coding-plan"],
       model: "qwen3.6-flash",
@@ -101,7 +108,7 @@ export const CATEGORY_FALLBACK_CHAINS: Readonly<Record<string, readonly Delegate
     { providers: ["xiaomi", "opencode-go"], model: "mimo-v2.6-pro", variant: "max" },
     { providers: ["xai", "github-copilot", "opencode-go"], model: "grok-4.7", variant: "xhigh" },
     {
-      providers: ["chatgpt-subscription", "github-copilot", "opencode"],
+      providers: ["chatgpt-subscription", "openai", "github-copilot", "opencode"],
       model: "gpt-5.6-terra",
       variant: "high",
     },
@@ -122,9 +129,9 @@ export const CATEGORY_FALLBACK_CHAINS: Readonly<Record<string, readonly Delegate
     {
       providers: ["anthropic-subscription", "anthropic", "anthropic-api", "github-copilot", "opencode"],
       model: "claude-opus-5-5",
-      variant: "max",
+      variant: "medium",
     },
-    { providers: ["zai-coding-plan", "opencode-go"], model: "glm-5.3", variant: "max" },
+    { providers: ["zai", "zai-coding-cn", "opencode-go"], model: "glm-5.3", variant: "max" },
     {
       providers: ["kimi-coding", "kimi-for-coding", "moonshotai", "opencode-go"],
       model: "kimi-k3",
@@ -132,11 +139,6 @@ export const CATEGORY_FALLBACK_CHAINS: Readonly<Record<string, readonly Delegate
     }
   ],
   writing: [
-    {
-      providers: ["anthropic-subscription", "anthropic", "anthropic-api", "github-copilot", "opencode"],
-      model: "claude-fable-5-1",
-      variant: "low",
-    },
     {
       providers: ["anthropic-subscription", "anthropic", "anthropic-api", "github-copilot", "opencode"],
       model: "claude-opus-5-5",

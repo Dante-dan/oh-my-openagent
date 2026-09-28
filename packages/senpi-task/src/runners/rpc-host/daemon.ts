@@ -15,6 +15,8 @@ import {
 } from "../../lazy/senpi-barrel"
 import { daemonLaunchOptions, daemonLaunchProfileId } from "./launch-options"
 import { DAEMON_LAUNCH_SPEC_FILENAME, readDaemonLaunchSpec, type DaemonLaunchSpec } from "./launch-spec"
+import { shareDaemonEnsure } from "./daemon-single-flight"
+import { classifyEnsureFailure } from "./ensure-failure"
 
 // The daemon's launch surface is documented from this module: `omo daemon run` and a
 // child-triggered ensure must reach the same producer.
@@ -68,7 +70,10 @@ export type HostUnavailableReason =
   | "engine_refused"
   | "win32"
   | "runtime"
+  | "host_unreachable"
+  | "ensure_timed_out"
   | "ensure_failed"
+  | "host_busy"
 
 /**
  * The daemon cannot host this child. `fallbackAllowed` marks the LOUD fallbacks to the per-child
@@ -155,6 +160,15 @@ export async function ensureTaskDaemon(input: EnsureTaskDaemonInput): Promise<En
   const now = ports.now ?? Date.now
   if (cached !== undefined && cached.socket === socket && cached.expiresAt > now()) return cached.ensured
 
+  return shareDaemonEnsure(socket, () => ensureTaskDaemonOnce(input, socket, now))
+}
+
+async function ensureTaskDaemonOnce(
+  input: EnsureTaskDaemonInput,
+  socket: string,
+  now: () => number,
+): Promise<EnsuredTaskDaemon> {
+  const ports = input.ports ?? {}
   const host = ports.host ?? (await loadTaskDaemonHostPort())
   const launchSpec = ports.launchSpec ?? loadDaemonLaunchSpec()
   const launch = daemonLaunchOptions({
@@ -201,11 +215,22 @@ export async function ensureTaskDaemon(input: EnsureTaskDaemonInput): Promise<En
     policy: launch.policy,
   }
   const ensured = await host.ensureHost(request).catch((error: unknown) => {
-    throw new HostUnavailableError("ensure_failed", { fallbackAllowed: false, detail: sanitize(error) })
+    throw new HostUnavailableError(classifyEnsureFailure(error), {
+      fallbackAllowed: false,
+      detail: sanitize(error),
+    })
   })
   // A host that was already up answered the probe above; one this call started is asked once, so
-  // the caller learns what it can do without opening a second connection of its own.
-  const capabilities = running?.capabilities ?? (await host.probeHost({ socket: ensured.socket }))?.capabilities
+  // the caller learns what it can do without opening a second connection of its own. That probe is
+  // this ensure's last use of the host, so the engine's attach hold (senpi #2242) ends with it: the
+  // daemon is transient, and a hold kept for the life of this omo process would stop its idle exit.
+  // Children attach on their own connections; the idle window (minutes) covers the gap.
+  let capabilities: readonly string[] | undefined
+  try {
+    capabilities = running?.capabilities ?? (await host.probeHost({ socket: ensured.socket }))?.capabilities
+  } finally {
+    ensured.release?.()
+  }
   const result: EnsuredTaskDaemon = {
     action: decision.action,
     reason: decision.reason,

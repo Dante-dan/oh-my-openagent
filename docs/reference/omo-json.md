@@ -200,34 +200,43 @@ When an agent or category `model` string matches a catalog key, resolution (`mod
 
 ### Model profiles (Native harness)
 
-A model profile is a named, ordered model chain you pick by intent ("Capable", "Deep work") instead of by model id. Two keys drive it (`schema/model-profile.ts`, `schema/config.ts`):
+A model profile is a named, ordered model chain you pick by lane (Daily / Geeky × Normal / Heavy) instead of by model id. Two keys drive it (`schema/model-profile.ts`, `schema/config.ts`):
 
 | Key | Type | Notes |
 |-----|------|-------|
-| `model_profiles` | record<string, `{ display_name?: string; models?: model entries }`> | Named chains. `models` entries are the same shape as a category chain: a bare string (`provider/model`, a bare model id, either with an optional `:level` reasoning suffix) or `{ model, reasoning?, ... }`. Both fields are optional; the object is strict. |
-| `model_profile` | string | Which chain drives the main session model. Either a profile id (`capable`) or a literal `provider/model` (`anthropic/claude-opus-5-5`). A value containing `/` is a pin, so the pin and the profile share one key. |
+| `model_profiles` | record<string, `{ display_name?: string; family?: "daily" \| "geeky"; tier?: "normal" \| "heavy"; models?: model entries }`> | Named chains. `models` entries are the same shape as a category chain: a bare string (`provider/model`, a bare model id, either with an optional `:level` reasoning suffix) or `{ model, reasoning?, ... }`. Fields are optional; the object is strict. `family` / `tier` are metadata only. |
+| `model_profile` | string | Which chain drives the main session model. Either a lane id (`daily-normal`) or a literal `provider/model` (`anthropic/claude-opus-5-5`). A value containing `/` is a pin, so the pin and the profile share one key. |
 
 This is not the `profiles` key. `profiles.<name>` is a config-layer overlay activated by `OMO_PROFILE` (see [Profile activation](#profile-activation)): it changes which configuration is loaded. `model_profiles` and `model_profile` are ordinary base keys inside that configuration: they change which model the main session starts on. A `profiles.<name>` layer may set `model_profile` like any other key, which is the one way the two meet.
 
-Three builtin profiles ship (`packages/omo-senpi/src/components/model-profile/builtin-profiles.ts`). Each rung lists every provider that serves the model, so a Copilot-only or gateway-only setup still resolves:
+Four builtin lanes ship (`packages/omo-senpi/src/components/model-profile/builtin-profiles.ts`). Each rung lists every provider that serves the model, so a Copilot-only or gateway-only setup still resolves:
 
 | Id | Display name | Chain |
 |----|--------------|-------|
-| `capable` | Capable | `claude-fable-5-1` (max) -> `claude-opus-5-5` (max) -> `kimi-k3` (max) -> `glm-5.3` (max) |
-| `simple-work` | Simple work | `gpt-5.6-luna-fast` (low) -> `deepseek-v4-flash` -> `claude-haiku-4-5` |
-| `deep-work` | Deep work | `gpt-6-astra` (high) -> `gpt-5.6-sol` (medium), the `deep` category chain verbatim |
+| `recommended` | Recommended (the unset default, not a lane) | `claude-opus-5-5` (medium) -> `claude-fable-5-1` (xhigh) -> `kimi-k3` (max) -> `gpt-6-astra` (xhigh) -> `gpt-6-sol` (medium) -> `glm-5.3` (max); ranked providers only, never a gateway aggregator |
+| `daily-normal` | Daily · Normal | `claude-opus-5-5` (medium) -> `kimi-k3` (max) -> `glm-5.3` (max) |
+| `daily-heavy` | Daily · Heavy | `claude-fable-5-1` (xhigh) |
+| `geeky-normal` | Geeky · Normal | `gpt-5.6-sol` (medium, ChatGPT subscription/API/Copilot/OpenCode) |
+| `geeky-heavy` | Geeky · Heavy | `gpt-6-astra` (xhigh) |
 
-What happens at session start (`packages/omo-senpi/src/components/model-profile/index.ts`, `resolve.ts`):
+GPT profiles use the same provider coverage as the corresponding task lanes:
+ChatGPT subscription takes priority over the `openai` API/proxy lane. A user
+profile can replace the candidate order and reasoning. Provider-qualified user
+candidates stay on the named provider; an unavailable one advances only to the
+next user-listed candidate, while a bare model id may match any provider.
 
-- `model_profile` unset: nothing. Senpi's own default resolution, including its `recommended-models` builtin, runs untouched.
+What happens at session start (`packages/omo-senpi/src/components/model-profile/index.ts`, `resolve.ts`) in OmO Desktop and headless sessions. The interactive TUI does not apply `model_profile` yet; it keeps the model it started with.
+
+- `model_profile` unset: Recommended is applied on a fresh session. The apply is not written back to config. Its rungs are served only by their ranked providers, so a gateway aggregator's copy of a model (for example OpenGateway's `anthropic/claude-opus-5-5`) is never picked; the lanes keep their cross-provider fallback.
 - A literal `provider/model`: that exact model is looked up in the live registry and applied.
-- A profile id: the builtin table is overlaid with `model_profiles`, and the first rung the live registry can serve is applied. The notice names the pick and the skipped rungs, for example `omo-senpi: model profile "capable" selected anthropic/claude-opus-5-5 (skipped: anthropic/claude-fable-5-1); mid-session fallback follows senpi's retry chains`.
-- No rung resolves: a notice lists the chain and Senpi's default model stays.
-- Unknown id: `model_profile "<name>" is not defined; known profiles: ...`.
+- A profile id: the builtin table is overlaid with `model_profiles`, and the first rung the live registry can serve is applied. The notice names the lane, the pick, and the thinking level, for example `OmO Native: model profile "daily-normal" (Daily · Normal) selected anthropic-subscription/claude-opus-5-5 medium; mid-session fallback follows senpi's retry chains`.
+- A rung counts for Recommended or a profile id only when its first turn could use it, which is resolved at session start: the provider's stored credential (per account when the provider holds several and the engine may rotate them - a pinned account is the only one that counts; with `providers.<id>.credentials.rotation: false` in `models.json` or a runtime API key only the default credential counts) and then the model's own request configuration. A saved login that can no longer be refreshed is skipped with the whole provider; a model whose configured headers do not resolve is skipped alone, and its siblings stay eligible. The notice names each skipped provider or model and the recovery for the current surface (`re-authenticate <provider> in Provider authentication settings` on the desktop, `/login <provider>` in an interactive session for a headless run); the raw error is never shown, `details.authFailed` carries `{ provider, model, reason }` with `reason` one of `refresh`, `credentials`, `request`. Each attempted account costs one credential resolution, sequentially (a rejected refresh waits for the provider's exchange timeout). A literal `provider/model` is applied without this check.
+- No rung resolves: a notice lists the chain against this session's model registry and Senpi's default model stays. Absence from the registry is not reported as disconnected auth.
+- Unknown id: `model_profile "<name>" is not defined; known profiles: ...`. Retired ids (`capable`, `deep-work`, `simple-work`) take this path; there is no alias.
 
 The profile is applied only to a fresh session (`reason` is `startup` or `new`) whose model wasn't set explicitly: a `--model` flag, a scoped model, a resumed session, and a fork all keep their own model. Apply is session-scoped; it never writes `settings.json` or `omo.json`. Mid-session model failures follow Senpi's own `retry.fallbackChains`, not the profile chain.
 
-Override semantics: a `model_profiles.<name>` entry that matches a builtin replaces it wholesale, with no per-field merge. `"capable": { "display_name": "Best" }` therefore yields a profile with no models, reported at runtime as `defines no models`, rather than the builtin chain under a new label. Any other name adds a profile. Chain entries may name a `models.<catalog>` entry and expand through the same `resolveModelReferences` path as category chains; a profile named like a catalog entry gets a `shadows a model catalog entry` diagnostic. A bare string in `categories.*.models` or `agents.*.models` that equals a profile id gets a `splicing a profile into a category chain is not supported yet` diagnostic: profiles pick the main session model and never enter a delegated child's chain.
+Override semantics: a `model_profiles.<name>` entry that matches a builtin replaces it wholesale, with no per-field merge. `"daily-normal": { "display_name": "Best" }` therefore yields a profile with no models, reported at runtime as `defines no models`, rather than the builtin chain under a new label. Any other name adds a profile. Chain entries may name a `models.<catalog>` entry and expand through the same `resolveModelReferences` path as category chains; a profile named like a catalog entry gets a `shadows a model catalog entry` diagnostic. A bare string in `categories.*.models` or `agents.*.models` that equals a profile id gets a `splicing a profile into a category chain is not supported yet` diagnostic: profiles pick the main session model and never enter a delegated child's chain.
 
 ```jsonc
 {
@@ -240,7 +249,7 @@ Override semantics: a `model_profiles.<name>` entry that matches a builtin repla
       "models": ["opus", "openai/gpt-5.6-sol:medium"] // catalog alias, then a literal with a reasoning suffix
     }
   },
-  "model_profile": "office" // or "capable", or a pin such as "anthropic/claude-opus-5-5"
+  "model_profile": "office" // or "daily-normal", or a pin such as "anthropic/claude-opus-5-5"
 }
 ```
 
@@ -336,7 +345,7 @@ Task engine settings. The whole object is optional, but `provider_concurrency`, 
 | `model_concurrency` | record<string, non-negative int (0 = unlimited)> | unset |
 | `global_concurrency` | non-negative int (0 = unlimited) | effective default `max(8, availableParallelism() * 2)` |
 | `max_depth` | int >= 0 | `1` |
-| `residency_max_children` | non-negative int or `"unlimited"` (0 = unlimited) | effective default `max(8, availableParallelism() * 3)` |
+| `residency_max_children` | non-negative int or `"unlimited"` (0 = unlimited) | `"unlimited"`: a parent keeps every child it started. Set a number to cap how many children one parent session keeps resident; at the cap the oldest finished idle child is evicted, and a spawn is refused only when every resident is still running. |
 | `ttl_ms` | positive int | `86400000` (24h) |
 | `state_dir` | string | unset (runtime uses `<project>/.omo/senpi-task`) |
 | `reattach_on_reconcile` | boolean | unset |

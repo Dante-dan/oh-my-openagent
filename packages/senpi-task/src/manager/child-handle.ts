@@ -46,6 +46,9 @@ export type ManagedChildHandle = {
   abort(): Promise<void>
   subscribe(listener: ManagedChildListener): () => void
   waitForOutcome(): Promise<RunnerOutcome>
+  // Present on process children: fires when the child starts a run on its own after its turn
+  // settled (a monitor or background job woke it), so the manager can reopen the record.
+  onSelfResumed?(listener: () => void): () => void
   // RPC handles expose a settled process signal; in-process handles omit it because their session
   // lifecycle has no separate child process to observe.
   hasExited?(): boolean
@@ -95,6 +98,7 @@ export function adaptRpcHandle(handle: RpcChildHandle): ManagedChildHandle {
     followUp: (text) => handle.followUp(text),
     abort: () => handle.abort(),
     subscribe: (listener) => handle.subscribe(listener),
+    ...(handle.onSelfResumed === undefined ? {} : { onSelfResumed: (listener: () => void) => handle.onSelfResumed?.(listener) ?? (() => undefined) }),
     waitForOutcome: () => handle.waitForOutcome === undefined ? rpcOutcome(handle) : handle.waitForOutcome(),
     hasExited: () => handle.hasExited?.() ?? handle.exitOutcome() !== undefined,
     ...(switchSession === undefined ? {} : { switchSession: (sessionPath: string) => switchSession(sessionPath) }),
@@ -153,12 +157,40 @@ async function rpcOutcome(handle: RpcChildHandle): Promise<RunnerOutcome> {
   }
 }
 
+/**
+ * The same child, reporting `onReleased` only once a teardown of it succeeds: a rejected dispose
+ * leaves it owned, so the next teardown attempt retries it.
+ */
+export function releaseOnDispose(handle: ManagedChildHandle, onReleased: (owner: ManagedChildHandle) => void): ManagedChildHandle {
+  const owner: ManagedChildHandle = new Proxy(handle, {
+    get: (target, property) => {
+      if (property === "dispose") {
+        return async (): Promise<void> => {
+          await target.dispose()
+          onReleased(owner)
+        }
+      }
+      const value: unknown = Reflect.get(target, property, target)
+      return typeof value === "function" ? value.bind(target) : value
+    },
+  })
+  return owner
+}
+
 export async function discardManagedHandle(handle: ManagedChildHandle): Promise<void> {
   try {
     if (handle.terminate !== undefined) await handle.terminate()
   } finally {
     await handle.dispose()
   }
+}
+
+/**
+ * Let go of a handle whose child now belongs to another owner: drop this process's connection and
+ * never end the child. For a daemon session that is a detach; `discardManagedHandle` would close it.
+ */
+export async function releaseSupersededHandle(handle: ManagedChildHandle): Promise<void> {
+  await handle.dispose()
 }
 
 export async function discardRpcHandle(handle: RpcChildHandle): Promise<void> {

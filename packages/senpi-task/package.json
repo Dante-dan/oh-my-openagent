@@ -21,6 +21,10 @@
       "types": "./src/category/resolver.ts",
       "import": "./src/category/resolver.ts"
     },
+    "./category-coverage": {
+      "types": "./src/category/coverage.ts",
+      "import": "./src/category/coverage.ts"
+    },
     "./dag": {
       "types": "./src/dag/index.ts",
       "import": "./src/dag/index.ts"
@@ -60,7 +64,7 @@
     "typebox": "1.3.18"
   },
   "peerDependencies": {
-    "@code-yeongyu/senpi": "2026.9.22-4",
+    "@code-yeongyu/senpi": "2026.9.28-3",
     "@earendil-works/pi-tui": "0.84.2",
     "typebox": "*"
   },
@@ -76,7 +80,7 @@
     }
   },
   "devDependencies": {
-    "@code-yeongyu/senpi": "2026.9.22-4",
+    "@code-yeongyu/senpi": "2026.9.28-3",
     "@earendil-works/pi-tui": "0.84.2",
     "typebox": "1.3.18"
   },

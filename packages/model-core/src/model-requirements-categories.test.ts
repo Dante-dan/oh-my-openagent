@@ -2,6 +2,10 @@ import { describe, expect, test } from "bun:test"
 import { CATEGORY_MODEL_REQUIREMENTS } from "./model-requirements"
 
 describe("CATEGORY_MODEL_REQUIREMENTS", () => {
+  test("writing only activates when one of its own chain models is available", () => {
+    expect(CATEGORY_MODEL_REQUIREMENTS["writing"].requiresAnyModel).toBe(true)
+  })
+
   test("ultrabrain routes GPT-6 Astra max before the existing Sol max fallbacks", () => {
     expect(CATEGORY_MODEL_REQUIREMENTS.ultrabrain.fallbackChain).toEqual([
       { providers: ["openai", "chatgpt-subscription"], model: "gpt-6-astra", variant: "max" },
@@ -40,13 +44,13 @@ describe("CATEGORY_MODEL_REQUIREMENTS", () => {
     ])
   })
 
-  test("deep-high routes GPT-6 Astra high only", () => {
+  test("deep-high routes GPT-6 Astra xhigh only", () => {
     expect(CATEGORY_MODEL_REQUIREMENTS["deep-high"].fallbackChain).toEqual([
-      { providers: ["openai", "chatgpt-subscription", "github-copilot", "opencode"], model: "gpt-6-astra", variant: "high" },
+      { providers: ["openai", "chatgpt-subscription", "github-copilot", "opencode"], model: "gpt-6-astra", variant: "xhigh" },
     ])
   })
 
-  test("deep-low is a single sol-family medium rung", () => {
+  test("deep-low leads with gpt-5.6-sol-fast medium on the OpenAI lanes, then gpt-5.6-sol medium, and carries no GPT-6 Sol rung", () => {
     // given
     const requirement = CATEGORY_MODEL_REQUIREMENTS["deep-low"]
 
@@ -55,6 +59,7 @@ describe("CATEGORY_MODEL_REQUIREMENTS", () => {
 
     // then
     expect(chain).toEqual([
+      { providers: ["openai", "chatgpt-subscription"], model: "gpt-5.6-sol-fast", variant: "medium" },
       {
         providers: ["openai", "chatgpt-subscription", "github-copilot", "opencode"],
         model: "gpt-5.6-sol",
@@ -64,7 +69,7 @@ describe("CATEGORY_MODEL_REQUIREMENTS", () => {
   })
 
   test("neither deep lane carries the other lane's model, so they never substitute each other", () => {
-    expect(CATEGORY_MODEL_REQUIREMENTS["deep-low"].fallbackChain.map(({ model }) => model)).toEqual(["gpt-5.6-sol"])
+    expect(CATEGORY_MODEL_REQUIREMENTS["deep-low"].fallbackChain.map(({ model }) => model)).toEqual(["gpt-5.6-sol-fast", "gpt-5.6-sol"])
     expect(CATEGORY_MODEL_REQUIREMENTS["deep-high"].fallbackChain.map(({ model }) => model)).toEqual(["gpt-6-astra"])
   })
 
@@ -111,13 +116,13 @@ describe("CATEGORY_MODEL_REQUIREMENTS", () => {
     // then
     expect(chain).toEqual([
       {
-        providers: ["chatgpt-subscription"],
-        model: "gpt-5.6-luna-fast",
+        providers: ["openai", "chatgpt-subscription"],
+        model: "gpt-6-luna-fast",
         variant: "low",
       },
       {
         providers: ["deepseek"],
-        model: "deepseek-v4-flash",
+        model: "deepseek-flash",
         variant: "off",
       },
       {
@@ -206,7 +211,7 @@ describe("CATEGORY_MODEL_REQUIREMENTS", () => {
       {
         providers: ["anthropic", "anthropic-api", "github-copilot", "opencode"],
         model: "claude-opus-5-5",
-        variant: "max",
+        variant: "medium",
       },
       {
         providers: ["zai-coding-plan", "opencode-go"],
@@ -236,19 +241,19 @@ describe("CATEGORY_MODEL_REQUIREMENTS", () => {
         variant: "max",
       },
       {
-        providers: ["kimi-for-coding", "moonshotai", "opencode-go", "opencode"],
-        model: "kimi-k3",
+        providers: ["anthropic", "anthropic-api", "github-copilot", "opencode"],
+        model: "claude-opus-5-5",
         variant: "max",
       },
       {
-        providers: ["anthropic", "anthropic-api", "github-copilot", "opencode"],
-        model: "claude-opus-5-5",
+        providers: ["kimi-for-coding", "moonshotai", "opencode-go", "opencode"],
+        model: "kimi-k3",
         variant: "max",
       }
     ])
   })
 
-  test("writing follows the approved 3-rung chain", () => {
+  test("writing leads with claude-opus-5-5 low and no longer carries claude-fable-5-1", () => {
     // given
     const requirement = CATEGORY_MODEL_REQUIREMENTS["writing"]
 
@@ -256,12 +261,8 @@ describe("CATEGORY_MODEL_REQUIREMENTS", () => {
     const chain = requirement.fallbackChain
 
     // then
+    expect(chain.map(({ model }) => model)).not.toContain("claude-fable-5-1")
     expect(chain).toEqual([
-      {
-        providers: ["anthropic", "anthropic-api", "github-copilot", "opencode"],
-        model: "claude-fable-5-1",
-        variant: "low",
-      },
       {
         providers: ["anthropic", "anthropic-api", "github-copilot", "opencode"],
         model: "claude-opus-5-5",
