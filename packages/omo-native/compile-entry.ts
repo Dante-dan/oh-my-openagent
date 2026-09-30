@@ -26,6 +26,7 @@ import { runCompiledDoctor, type CompiledDoctorOptions } from "./compiled-doctor
 import { compiledDiagnosticRuntimeLoader, loadCompiledCoverageEngine } from "./compiled-diagnostic-runtime"
 import { isInternalSupervisorLaunch, runInternalSupervisor } from "./supervisor-fast-path"
 import { registerEngineRuntimeModules } from "./engine-runtime-modules"
+import { applyCachedClaudeCode } from "../omo-senpi/src/components/claude-code/index"
 import { spawnSync } from "node:child_process"
 import { delimiter } from "node:path"
 import {
@@ -279,6 +280,7 @@ export async function runCompiledLauncher(args: string[], execDir: string, engin
         versionText: versionLine(stamped, enginePin),
         updateCommand: compiledUpdateCommand(stamped.omoBuild),
         engine,
+        args: args.slice(1),
         options: migration,
       })
     } else runDoctor(inventory, [], { daemonEngine: engine })
@@ -354,6 +356,7 @@ async function main(): Promise<void> {
   }
   process.argv.splice(2, process.argv.length - 2, ...buildSenpiArgs(process.argv.slice(2), execDir))
   Object.assign(process.env, remapSenpiEnvironment(process.env, execDir))
+  applyCachedClaudeCode(process.env, execDir)
   if (isInternalSupervisorLaunch(process.argv.slice(2)) && await runInternalSupervisor(process.argv.slice(2))) return
   await registerEngineRuntimeModules()
   await import("../../node_modules/@code-yeongyu/senpi/dist/cli.js") // literal: see import note above

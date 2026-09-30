@@ -1,3 +1,60 @@
+## 2026-09-30 - The compiled binary hands a downloaded Claude Code to the engine at startup (#9276)
+
+`compile-entry.ts` calls `applyCachedClaudeCode` (omo-senpi `claude-code/index.ts`) right after
+`remapSenpiEnvironment`, so a Claude Code downloaded in an earlier session reaches the engine through
+`CLAUDE_CODE_EXECUTABLE` before its startup availability probe, every turn's auth check, and task children. An explicit
+`CLAUDE_CODE_EXECUTABLE` or `claude` on PATH still wins, and nothing happens before the first download.
+
+## 2026-09-30 - The standalone binary downloads Claude Code on the first anthropic-subscription turn (#9262)
+
+A release binary embeds no Claude Code executable, because the platform package's `claude` alone (226 MB on
+darwin-arm64) exceeds the 150 MB binary budget. With no `claude` on PATH, every anthropic-subscription turn failed with
+`Claude Code executable not found`, while an npm install gets it from the SDK's optional platform package. The build now
+stages `claude-code-pin.json` (`script/claude-code-pin.ts`): the platform package the engine's claude-agent-sdk pins,
+and its sha512 integrity from `bun.lock`. The new omo-senpi `claude-code` component reads that pin beside the
+provisioned runtime. On the first turn whose model is anthropic-subscription, it downloads that exact tarball
+(`acquire.ts`), checks the integrity, extracts only the executable into
+`<runtime>/claude-code/<package>/<version>/` with an atomic rename, and hands it to the engine through
+`CLAUDE_CODE_EXECUTABLE` before the turn starts. A notice is shown while it downloads. With no network, the error names
+the alternatives. An explicit `CLAUDE_CODE_EXECUTABLE` or `claude` on PATH wins and nothing is downloaded. An npm
+install has no pin, so the component does nothing there. `omo doctor` on the binary reports the executable
+(`claude-code-doctor.ts`): present, on PATH, overridden, or not downloaded yet.
+
+## 2026-09-30 - The standalone binary reports and reaps its own stale engines (#9252 follow-up)
+
+`omo doctor --reap <pid>` on the standalone binary printed the regular report and reaped nothing, because the compiled
+doctor never read its arguments. The stale-engine report could not see a binary engine either: `ENGINE_MARKERS` in
+`bin/lib/doctor.js` match only the npm engine paths, and a binary engine runs as
+`~/.omo/binary-runtime/<version>/omo`. `isEngine` now also accepts that executable when it runs a session: a bare
+launch or engine flags. The same executable serving omo's own commands (`doctor`, `setup`, `daemon`, `host`, ...),
+its internal hosts (`--internal-*`) or a bundled script (the LSP daemon) is never an engine, and `--mode` keeps it
+managed. `runCompiledDoctor` takes the doctor arguments and routes `--reap` to `reapStaleEngines`, with the npm
+refusals unchanged, and prints `staleEngineReport`.
+
+## 2026-09-30 - standalone binaries stage codemode's external runtime closure and smoke eval (#9248)
+
+### What changed
+
+The release-binary sidecar resolver now reads codemode's own dependency manifest, excludes direct
+dependencies already supplied by the senpi engine host, and recursively stages every remaining runtime
+dependency under codemode's package-local `node_modules`. The platform release workflow runs a freshly
+built Darwin arm64 binary through an isolated local-provider RPC smoke that requires `eval` to register
+and return `42`. Every Darwin, Linux and Windows target manifest is checked for the same closure.
+
+### Why
+
+OmO 5.1.3 and 5.1.4 copied the codemode package without `@babel/parser`, so codemode failed during
+extension loading and both JavaScript and Python eval disappeared from every standalone binary.
+
+### Why an extension could not handle it
+
+The extension cannot register when its own import graph is incomplete. The dependency closure must be
+present in the compiled binary's provisioned runtime before extension loading begins.
+
+### Expected merge conflict zones
+
+`script/engine-sidecar-sources.ts`, the platform release smoke steps, and sidecar manifest tests.
+
 ## 2026-09-30 - The Windows release exe runs from its download folder instead of dying on the pi-pty package version (#7485)
 
 A raw `omo-windows-*.exe` launched from an empty folder provisioned `~/.omo/binary-runtime/<version>/` and then
