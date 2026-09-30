@@ -73,8 +73,11 @@ function raceWorkerSource(projectDir: string, prompt: string, barrierDir: string
     `const releasePath = ${JSON.stringify(join(barrierDir, "release"))}`,
     `const waitForRelease = () => new Promise((resolve, reject) => {`,
     `  const watcher = watch(${JSON.stringify(barrierDir)}, () => { if (existsSync(releasePath)) finish() })`,
+    // Windows filesystem notifications can be coalesced; every child also checks the same release file.
+    `  const poll = setInterval(() => { if (existsSync(releasePath)) finish() }, 25)`,
     `  const timeout = setTimeout(() => finish(new Error("timed out waiting for DAG race release")), 30_000)`,
-    `  const finish = (error) => { clearTimeout(timeout); watcher.close(); error === undefined ? resolve() : reject(error) }`,
+    `  const finish = (error) => { clearTimeout(timeout); clearInterval(poll); watcher.close(); error === undefined ? resolve() : reject(error) }`,
+    `  process.stdout.write("ready\\n")`,
     `  if (existsSync(releasePath)) finish()`,
     `})`,
     `const definition = {`,
@@ -85,7 +88,6 @@ function raceWorkerSource(projectDir: string, prompt: string, barrierDir: string
     `    { id: "build", prompt: "build it", category: "quick", dependsOn: ["plan"] },`,
     `  ],`,
     `}`,
-    `process.stdout.write("ready\\n")`,
     `await waitForRelease()`,
     `try {`,
     `  const started = await dag.start({ definition, parentSessionId: ${JSON.stringify(parentSessionId)}, rootSessionId: ${JSON.stringify(rootSessionId)} })`,
@@ -137,14 +139,35 @@ async function raceStarts(projectDir: string, prompts: readonly string[]): Promi
   // Each child installs its filesystem watcher before publishing ready. The single release file is
   // written only after both readiness signals, so the two starts cannot be serialized by the
   // parent's sequential stdin writes on Windows.
-  const ready = await Promise.all(readers.map((read) => read()))
-  expect(ready).toEqual(prompts.map(() => "ready"))
-  fs.writeFileSync(join(barrierDir, "release"), "go")
-  const outcomes = await Promise.all(readers.map(async (read) => JSON.parse(await read()) as RaceOutcome))
-  const exits = await Promise.all(children.map((child) => child.exited))
-  const stderr = await Promise.all(errors)
-  exits.forEach((code, index) => expect(code, stderr[index]).toBe(0))
-  return outcomes
+  const bounded = async <T>(phase: string, operation: Promise<T>): Promise<T> => {
+    let timeout: ReturnType<typeof setTimeout> | undefined
+    try {
+      return await Promise.race([
+        operation,
+        new Promise<never>((_, reject) => {
+          timeout = setTimeout(() => reject(new Error(`DAG race ${phase} timed out; child PIDs: ${children.map((child) => child.pid).join(", ")}`)), 10_000)
+        }),
+      ])
+    } finally {
+      clearTimeout(timeout)
+    }
+  }
+  try {
+    const ready = await bounded("readiness", Promise.all(readers.map((read) => read())))
+    expect(ready).toEqual(prompts.map(() => "ready"))
+    fs.writeFileSync(join(barrierDir, "release"), "go")
+    const outcomes = await bounded("results", Promise.all(readers.map(async (read) => JSON.parse(await read()) as RaceOutcome)))
+    const exits = await bounded("exit", Promise.all(children.map((child) => child.exited)))
+    const stderr = await Promise.all(errors)
+    const diagnostics = JSON.stringify({ outcomes, exits, stderr })
+    exits.forEach((code) => expect(code, diagnostics).toBe(0))
+    return outcomes
+  } finally {
+    for (const child of children) {
+      if (child.exitCode === null) child.kill()
+    }
+    await Promise.all(children.map((child) => child.exited))
+  }
 }
 
 describe("createDagManager start", () => {
@@ -681,8 +704,8 @@ describe("createDagManager concurrent starts", () => {
     const store = createDagFileStore({ project_dir: projectDir })
     const runs = runFiles(store)
     expect(runs).toHaveLength(1)
-    expect(outcomes.filter((outcome) => outcome.ok)).toHaveLength(1)
-    expect(outcomes.filter((outcome) => outcome.code === "definition_conflict")).toHaveLength(1)
+    expect(outcomes.filter((outcome) => outcome.ok), JSON.stringify(outcomes)).toHaveLength(1)
+    expect(outcomes.filter((outcome) => outcome.code === "definition_conflict"), JSON.stringify(outcomes)).toHaveLength(1)
     const winner = outcomes.find((outcome) => outcome.ok)?.runId as DagRunId
     const checkpoint = store.readCheckpoint<{ readonly definitionFingerprint: string }>(winner)
     expect(store.readKey(parentSessionId, "release-plan")).toMatchObject({
