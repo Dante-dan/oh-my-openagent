@@ -4,6 +4,7 @@ import { DEFAULT_MODEL_PROFILE_ID } from "./builtin-profiles"
 import { credentialRotationPolicy } from "./credential-policy"
 import { authFailedDetails, noticeContent } from "./notice"
 import { type AuthFailure, type ProbeRegistry, probeRequestAuth, probeRuntime, sanitizedAuthErrorDetail } from "./request-auth"
+import { registerModelPresetCommands } from "./preset-commands"
 import { resolveModelProfile, type ModelProfileResolution } from "./resolve"
 
 /**
@@ -195,6 +196,7 @@ export function createModelProfileComponent(options: ModelProfileComponentOption
   return {
     name: "model-profile",
     register(pi: SenpiExtensionAPI, ctx: ComponentContext): void {
+      registerModelPresetCommands(pi)
       // One apply per session id; a host that reports no id gets exactly one apply per extension
       // instance, which is the conservative reading of "never clobber twice".
       const appliedSessions = new Set<string>()
