@@ -1,0 +1,46 @@
+name: PR 9233 Linux bundle rebuild
+on:
+  push:
+    branches: [recovery/9233-linux-bundle-20260930]
+permissions:
+  contents: read
+jobs:
+  rebuild:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.4.2"
+      - run: bun install --frozen-lockfile --ignore-scripts
+      - run: bun run script/remove-stale-self-package-tests.ts
+      - name: Rebuild plugin on Linux
+        run: bun run build:senpi-plugin
+      - name: Verify bundle freshness
+        run: |
+          node packages/omo-senpi/plugin/scripts/build-extension.mjs --check
+          node packages/omo-senpi/plugin/scripts/build-install.mjs --check
+      - name: Focused tests and typecheck
+        run: |
+          bun test packages/senpi-task/src/runners/rpc/exit-mapping.test.ts packages/omo-senpi/scripts/qa/task-rpc-e2e.windows.test.ts
+          bunx tsgo --noEmit -p packages/omo-senpi/tsconfig.json
+          node packages/omo-senpi/scripts/qa/task-rpc-e2e.mjs --self-test
+      - name: Isolated live Senpi QA and capture tracked plugin
+        run: |
+          mkdir -p /tmp/9233-evidence
+          PATH="$PWD/node_modules/.bin:$PATH" SENPI_BIN="$PWD/node_modules/.bin/senpi" node packages/omo-senpi/scripts/qa/drive.mjs | tee /tmp/9233-evidence/live-drive.jsonl
+          git ls-files -z packages/omo-senpi/plugin | tar --null -T - -czf /tmp/9233-evidence/plugin-linux.tar.gz
+          git diff --stat > /tmp/9233-evidence/build-diff-stat.txt
+          git rev-parse HEAD > /tmp/9233-evidence/source-sha.txt
+      - uses: actions/upload-artifact@v7
+        with:
+          name: pr9233-linux-plugin
+          path: /tmp/9233-evidence/
+      - name: Senpi package gate
+        run: bun run test:senpi
