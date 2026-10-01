@@ -26,6 +26,30 @@ describe("TaskManager lane lease of a suspended child", () => {
     expect(second).toMatchObject({ kind: "started", status: "running" })
   })
 
+  for (const hasNewerLease of [false, true]) {
+    test(`#given a shared record advanced to a newer epoch ${hasNewerLease ? "with its own lease" : "without a new lease"} #when the old handle is forgotten #then only the old run's lease is released`, async () => {
+      const inProcess = new FakeRunner()
+      const { manager, store } = makeManager({ inProcess, config: settings({ default_concurrency: hasNewerLease ? 2 : 1, max_depth: 1 }) })
+      const first = await manager.start(baseSpec({ name: "first" }))
+      if (first.kind !== "started") throw new Error("expected first to start")
+      const record = store.load(first.task_id)
+      if (record === null) throw new Error("expected task record")
+      const concurrency = manager.concurrency
+      if (concurrency === undefined) throw new Error("expected manager concurrency")
+      const oldEpoch = record.notification.run_epoch
+      const nextEpoch = oldEpoch + 1
+      if (hasNewerLease) expect(concurrency.tryAcquire(record.model, record.task_id, nextEpoch)).toBe(true)
+      store.mutate(first.task_id, (fresh) => ({ ...fresh, notification: { ...fresh.notification, run_epoch: nextEpoch } }))
+
+      manager.forget(first.task_id)
+
+      expect(concurrency.leaseState(first.task_id, oldEpoch)).toBeUndefined()
+      expect(concurrency.leaseState(first.task_id, nextEpoch)).toBe(hasNewerLease ? "held" : undefined)
+      const next = await manager.start(baseSpec({ name: "next" }))
+      expect(next).toMatchObject({ kind: "started", status: "running" })
+    })
+  }
+
   test("#given a suspended child whose slot was released #when its stale handle settles later #then the lane is not released twice", async () => {
     // given
     const inProcess = new FakeRunner()

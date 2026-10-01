@@ -75,6 +75,8 @@ import { describeStartFailure } from "./start-failure"
 type PreparedIsolation = Extract<IsolationPreparation, { readonly ok: true }>
 
 type LiveTask = {
+  // This manager owns this run's lease even if shared-store recovery advances the record.
+  leaseEpoch: number
   readonly handle: ManagedChildHandle
   readonly model: string
   readonly unsubscribe: () => void
@@ -693,7 +695,7 @@ class TaskManagerImpl implements TaskManager {
       isAttached: (taskId) => this.#live.has(taskId),
       attachLive: (fresh, attachedHandle) => {
         const unsubscribe = this.#subscribeChildFacts(attachedHandle, fresh.task_id)
-        this.#live.set(fresh.task_id, { handle: attachedHandle, model: fresh.model, unsubscribe })
+        this.#live.set(fresh.task_id, { handle: attachedHandle, model: fresh.model, unsubscribe, leaseEpoch: fresh.notification.run_epoch })
         this.#attachChildSubscribers(fresh.task_id, attachedHandle)
         return unsubscribe
       },
@@ -704,6 +706,8 @@ class TaskManagerImpl implements TaskManager {
       destroyAttached: (taskId: string) =>
         (this.#options.destruction ?? NOOP_DESTRUCTION).destroyResidentTask(taskId, "revive_failure"),
       armOutcome: (fresh, attachedHandle, epoch) => {
+        const live = this.#live.get(fresh.task_id)
+        if (live?.handle === attachedHandle) live.leaseEpoch = epoch
         this.#outcome.trackOutcome(fresh.task_id, attachedHandle, fresh.model, epoch)
         void this.#steering.notifyStarted(fresh.task_id)
       },
@@ -812,6 +816,7 @@ class TaskManagerImpl implements TaskManager {
 
     const unsubscribe = this.#subscribeChildFacts(handle, record.task_id)
     this.#live.set(record.task_id, {
+      leaseEpoch: record.notification.run_epoch,
       handle,
       model,
       unsubscribe,
@@ -1250,7 +1255,7 @@ class TaskManagerImpl implements TaskManager {
     try {
       if (current?.status === "cancelled" && current.notification.run_epoch === epoch) {
         // This run's own cancel: the destruction port tears the child down and records the disposal.
-        this.#live.set(taskId, { handle, model: context.model, unsubscribe: () => undefined })
+        this.#live.set(taskId, { handle, model: context.model, unsubscribe: () => undefined, leaseEpoch: epoch })
         await (this.#options.destruction ?? NOOP_DESTRUCTION).destroyResidentTask(taskId, "cancel")
       } else {
         await discardManagedHandle(handle)
@@ -1386,6 +1391,7 @@ class TaskManagerImpl implements TaskManager {
 
     const unsubscribe = this.#subscribeChildFacts(handle, context.record.task_id)
     this.#live.set(context.record.task_id, {
+      leaseEpoch: context.record.notification.run_epoch,
       handle,
       model: context.model,
       unsubscribe,
@@ -1421,6 +1427,7 @@ class TaskManagerImpl implements TaskManager {
       ok: true,
       release,
       commit: () => {
+        live.leaseEpoch = epoch
         this.#runStats.set(taskId, createRunStatsTracker(this.#now(), this.#now))
         this.#outcome.trackOutcome(taskId, live.handle, live.model, epoch)
       },
@@ -1445,6 +1452,7 @@ class TaskManagerImpl implements TaskManager {
           release()
           return
         }
+        live.leaseEpoch = epoch
         this.#runStats.set(record.task_id, createRunStatsTracker(this.#now(), this.#now))
         this.#outcome.trackOutcome(record.task_id, live.handle, live.model, epoch)
       },
@@ -1485,7 +1493,7 @@ class TaskManagerImpl implements TaskManager {
     const live = this.#live.get(taskId)
     if (live === undefined) return
     const closing = this.#closingRungs.get(taskId)
-    const epoch = closing?.handle === live.handle ? closing.epoch : this.#tryLoad(taskId)?.notification.run_epoch ?? 0
+    const epoch = closing?.handle === live.handle ? closing.epoch : live.leaseEpoch
     this.#releaseSlot(taskId, live.model, epoch)
   }
 
