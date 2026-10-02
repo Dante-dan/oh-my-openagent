@@ -19,6 +19,10 @@ export type ChildSessionListener = (event: ChildSessionEvent) => void
 // live AgentSession; fakes implement only these members.
 export type ChildSession = {
   readonly sessionId: string
+  readonly extensionRunner?: {
+    hasHandlers(event: "session_shutdown"): boolean
+    emit(event: { readonly type: "session_shutdown"; readonly reason: "quit" }): Promise<unknown>
+  }
   prompt(text: string): Promise<void>
   steer(text: string): Promise<QueuedInputDisposition>
   followUp(text: string): Promise<QueuedInputDisposition>
@@ -285,7 +289,7 @@ function createTrackedChildHandle(
       if (disposed) return
       disposed = true
       unsubscribeObserver()
-      session.dispose()
+      disposeChildSession(session)
     },
   }
   return { handle, beginTurn }
@@ -310,5 +314,22 @@ export function createRestoredChildHandle(input: CreateRestoredChildHandleInput)
 // teardown inside the handle-definition module that owns dispose delegation, so the single-writer
 // rule still holds: lifecycle remains the only INVOKER for admitted handles.
 export function discardUnstartedChildSession(session: ChildSession): void {
-  session.dispose()
+  disposeChildSession(session)
+}
+
+// Extension shutdown must finish before AgentSession.dispose invalidates its context. The engine
+// applies its per-handler host budget to this event; the handle's synchronous API need not change.
+const disposingSessions = new WeakSet<ChildSession>()
+
+function disposeChildSession(session: ChildSession): void {
+  if (disposingSessions.has(session)) return
+  disposingSessions.add(session)
+  const runner = session.extensionRunner
+  if (runner === undefined || !runner.hasHandlers("session_shutdown")) {
+    session.dispose()
+    return
+  }
+  void runner.emit({ type: "session_shutdown", reason: "quit" })
+    .finally(() => session.dispose())
+    .catch(() => { console.warn("In-process child extension shutdown failed") })
 }
