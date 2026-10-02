@@ -33,7 +33,20 @@ export function createCompletionObservingStore(backing: TaskRecordStore, deps: C
     stateDir: backing.stateDir,
     save: (record) => backing.save(record),
     replace: (record) => backing.replace(record),
-    mutate: (taskId, mutation) => backing.mutate(taskId, mutation),
+    mutate: (taskId, mutation) => {
+      let terminalEdge = false
+      const result = backing.mutate(taskId, (fresh) => {
+        const next = mutation(fresh)
+        terminalEdge = !TERMINAL_STATUSES.has(fresh.status) && TERMINAL_STATUSES.has(next.status)
+        return next
+      })
+      if (terminalEdge && result !== null) {
+        deps.notifier.notifyTerminal({ record: result, parentState: deps.parentState(),
+          runInBackground: result.notify_on_terminal || deps.wasBackground(taskId) })
+        deps.onTerminal?.(result)
+      }
+      return result
+    },
     load: (taskId) => backing.load(taskId),
     list: () => backing.list(),
     appendEvent: (taskId, event) => backing.appendEvent(taskId, event),
