@@ -10,7 +10,7 @@ import type { FactsRecordTool } from "./facts-record-tool"
 import { enqueue, fixture, onlyRunDir, registrySnapshot, runLedgers, runnerOptions } from "./facts-runner.test-support"
 
 const SOURCE = `Old preference: tabs.\n${"context é🌍\\\"\n".repeat(12_000)}\nCorrection: spaces supersedes tabs.`
-type Mode = "success" | "compaction_start" | "resume_context_reduced" | "length" | "bytes" | "hang" | "create-failed"
+type Mode = "success" | "invalid-then-valid" | "compaction_start" | "resume_context_reduced" | "length" | "bytes" | "hang" | "create-failed"
 
 function childFactory(mode: Mode, captured: CreateAgentSessionOptions[], prompts: string[], started: () => void = () => undefined): CreateChildSession {
   return async (options) => {
@@ -30,8 +30,12 @@ function childFactory(mode: Mode, captured: CreateAgentSessionOptions[], prompts
         if (mode === "hang") return new Promise<void>((resolve) => { release = resolve; started() })
         if (mode === "compaction_start" || mode === "resume_context_reduced") emit({ type: mode })
         if (mode === "length") emit({ type: "message_end", message: { role: "assistant", stopReason: "length", content: [] } })
+        if (mode === "invalid-then-valid") {
+          expect((await tool.execute("malformed", { scope: "person", text: "Wants the startup changelog hidden.", date: "2026-09-30" })).isError).toBe(true)
+        }
         const result = await tool.execute("fact", { scope: "project", text: mode === "bytes" ? "x".repeat(131_072) : "spaces supersedes tabs", date: "2026-08-10" })
-        if (mode !== "success") expect(result.isError).toBe(true)
+        if (mode !== "success" && mode !== "invalid-then-valid") expect(result.isError).toBe(true)
+        else expect(result.isError).toBeUndefined()
         emit({ type: "message_end", message: { role: "assistant", content: [], stopReason: "stop" } })
       },
       steer: async () => "handled", followUp: async () => "handled",
@@ -77,6 +81,18 @@ test("#given ordinary work and two eligible oversized entries #when draining #th
   }
   expect(await f.queue.listPending()).toHaveLength(0)
   expect((await new FactsFailureStore({ identityPaths: f.identity.paths }).readFailures()).entries).toHaveLength(0)
+}, 30_000)
+
+test("#given an admitted oversized child rejects a malformed person call #when it records a valid correction #then only valid facts commit and the queue is consumed", async () => {
+  const f = await setup("invalid-then-valid")
+  expect((await new FactsExtractorRunner(f.options).launchPending()).status).toBe("committed")
+  expect(await f.queue.listPending()).toHaveLength(0)
+  expect((await new FactsFailureStore({ identityPaths: f.identity.paths }).readFailures()).entries).toHaveLength(0)
+  const repo = new GitMemoryRepo({ dir: f.identity.paths.repo, agentId: f.identity.id })
+  expect((await repo.log()).filter((commit) => commit.trailers["Omo-Facts-Batch"] !== undefined)).toHaveLength(1)
+  expect(await readFile(join(await onlyRunDir(f.identity), "extraction.jsonl"), "utf8")).toBe(
+    '{"scope":"project","text":"spaces supersedes tabs","date":"2026-08-10"}\n',
+  )
 }, 30_000)
 
 test("#given a first-prompt guard failure or constructor crash #when the child settles #then original queue and watermarks survive with no smaller fallback", async () => {

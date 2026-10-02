@@ -1,6 +1,6 @@
 import type { AgentToolResult, ToolDefinition } from "@code-yeongyu/senpi"
 import { appendFile } from "@oh-my-opencode/memory-core/fs"
-import { parseFactsExtractionRecord } from "@oh-my-opencode/memory-core"
+import { FactsExtractionValidationError, parseFactsExtractionRecord } from "@oh-my-opencode/memory-core"
 import { Type, type Static } from "typebox"
 
 export const FACTS_RECORD_TOOL_NAME = "record_fact"
@@ -69,6 +69,9 @@ export function createFactsRecordTool(input: FactsRecordToolInput): FactsRecordT
           details: undefined,
         }
       } catch (error) {
+        // A rejected invocation has not touched the artifact or consumed its budget.
+        // Let the child correct it; only write/budget failures invalidate the run.
+        if (error instanceof FactsExtractionValidationError) return errorResult(error.message)
         return reject(error instanceof Error ? error.message : String(error))
       }
     },

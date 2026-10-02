@@ -80,6 +80,27 @@ describe("facts record tool", () => {
     }
   })
 
+  test("#given a bounded run with a malformed person call #when valid calls surround it #then validation rejects only that call", async () => {
+    const root = await mkdtemp(join(tmpdir(), "facts-record-tool-"))
+    try {
+      const path = join(root, "extraction.jsonl")
+      await Bun.write(path, "")
+      const failures: string[] = []
+      const tool = createFactsRecordTool({ extractionPath: path, maxRecords: 2, maxBytes: 1024, onFailure: (reason) => failures.push(reason) })
+      const first = { scope: "project" as const, text: "The project uses Bun.", date: "2026-09-30" }
+      const corrected = { scope: "project" as const, text: "person-unresolved: Wants the startup changelog hidden.", date: "2026-09-30" }
+      const malformed = { scope: "person" as const, text: "Wants the startup changelog hidden.", date: "2026-09-30" }
+
+      expect((await tool.execute("first", first)).isError).toBeUndefined()
+      const rejection = await tool.execute("malformed", malformed)
+      expect(rejection.isError).toBe(true)
+      expect(rejection.content).toEqual([{ type: "text", text: "Fact rejected: facts extraction line 2: person record requires person" }])
+      expect(failures).toEqual([])
+      expect((await tool.execute("corrected", corrected)).isError).toBeUndefined()
+      expect(await readFile(path, "utf8")).toBe(`${JSON.stringify(first)}\n${JSON.stringify(corrected)}\n`)
+    } finally { await rm(root, { recursive: true, force: true }) }
+  })
+
   test("#given valid person and project records #when recorded in order #then exact JSONL lines are appended", async () => {
     // given
     const root = await mkdtemp(join(tmpdir(), "facts-record-tool-"))
