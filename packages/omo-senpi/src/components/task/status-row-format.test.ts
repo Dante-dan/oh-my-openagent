@@ -38,6 +38,19 @@ function longActiveRecord(): TaskRecord {
 }
 
 describe("buildWidgetRows", () => {
+  it("#given an expired unresumable child #when widget rows render #then its terminal failure reason remains visible", () => {
+    const task = record({ task_id: "st_expired", status: "error", residency_state: "disposed",
+      error_message: "failed: suspended_unresumable (daemon_unavailable); partial work at task_output(st_expired)" })
+    for (const row of [buildWidgetRows([task])[0], backgroundWidgetRows([task], new Map(), 0)[0]]) {
+      expect(row).toContain("failed: suspended_unresumable")
+      expect(row).toContain("daemon_unavailable")
+      expect(row).not.toContain("suspended (resumes")
+      expect(rendererVisibleWidth(row ?? "")).toBeLessThanOrEqual(70)
+    }
+    expect(formatTaskRow(task)).toContain("status:error")
+    expect(formatTaskRow(task)).toContain("daemon_unavailable")
+  })
+
   it("#given active and completed records #when selecting rows #then only resident team members follow active rows before the cap", () => {
     const alpha = record({ task_id: "st_alpha", name: "team:12345678-1234-1234-1234-123456789abc:alpha", task_summary: "settled alpha", status: "completed" })
     const beta = record({ task_id: "st_beta", name: "team:12345678-1234-1234-1234-123456789abc:beta", task_summary: "settled beta", status: "completed" })

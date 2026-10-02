@@ -171,6 +171,7 @@ export type IdleReclaimerScheduler = {
 }
 
 export type LifecycleDeps = {
+  readonly currentParentSessionId?: () => string | undefined
   readonly revivePolicy?: RevivePolicyPort
   readonly store: TaskRecordStore
   readonly registry: ResidencyRegistry

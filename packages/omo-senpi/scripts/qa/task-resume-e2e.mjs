@@ -33,6 +33,7 @@ import {
   resumeOmoConfig,
 } from "./task-resume-e2e-scenarios.mjs"
 import { runTaskResumeFailureScenarios } from "./task-resume-failure-e2e.mjs"
+import { runSuspendedExpiryLane } from "./task-suspended-expiry-e2e.mjs"
 
 const scriptDir = dirname(fileURLToPath(import.meta.url))
 const mockProviderEntry = join(scriptDir, "task-resume-e2e-mock-provider.ts")
@@ -44,6 +45,7 @@ export async function runTaskResumeScenarios({ senpiBin, checks, capture, pids, 
   const ctx = { senpiBin, checks, capture, pids, outDir, sandboxes: [] }
   await runHappyLane(ctx)
   await runTaskResumeFailureScenarios(ctx)
+  await runSuspendedExpiryLane(ctx)
   return ctx.sandboxes
 }
 

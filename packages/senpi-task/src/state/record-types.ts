@@ -117,6 +117,7 @@ export type TaskRecord = TaskRecordInput & TaskStartFailureRecordFields & {
   readonly revive_delivery_uncertain?: ReviveDeliveryUncertainty
   readonly resumed_run_epoch?: number
   readonly start_queued?: StartQueued
+  readonly suspended_at?: string
   readonly suspension_reason?: SuspensionReason
   readonly runner_kind?: RunnerKind
   readonly host_session?: HostSessionIdentity

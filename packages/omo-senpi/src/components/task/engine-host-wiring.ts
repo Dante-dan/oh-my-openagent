@@ -40,6 +40,7 @@ export function composeEngineHostWiring(input: EngineHostWiringInput): EngineHos
   const host = input.host ?? createEngineHostRuntime(settings, runtime, pi, { storeDir: baseStore.stateDir })
   const lifecycle = createTaskLifecycle({ ...input.lifecycle, config: settings,
     hostEndpoint: host.hostEndpoint,
+    currentParentSessionId: () => runtime.sessionId(),
     revivePolicy: {
       currentGeneration: () => {
         const modelRegistry = runtime.modelRegistry()

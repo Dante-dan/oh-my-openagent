@@ -23,6 +23,7 @@ const DEFAULT_ORPHAN_KILL_DELAY_MS = 5_000
 const DEFAULT_HOST_CLOSE_TIMEOUT_MS = 10_000
 
 export type LifecycleContext = {
+  readonly currentParentSessionId: (() => string | undefined) | undefined
   readonly revivePolicy?: LifecycleDeps["revivePolicy"]
   readonly store: TaskRecordStore
   readonly registry: ResidencyRegistry
@@ -73,6 +74,7 @@ export const defaultSignaller: ProcessSignaller = {
 export function resolveContext(deps: LifecycleDeps): LifecycleContext {
   return {
     store: deps.store,
+    currentParentSessionId: deps.currentParentSessionId,
     revivePolicy: deps.revivePolicy,
     registry: deps.registry,
     config: deps.config,

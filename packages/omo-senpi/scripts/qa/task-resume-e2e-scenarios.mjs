@@ -10,7 +10,7 @@ export const PONG_TOKEN = "RESUME_PONG_TOKEN"
 export const MIDTURN_CONTINUED_TOKEN = "MIDTURN_CONTINUED_TOKEN"
 export const FINISHED_CHILD_TOKEN = "FINISHED_CHILD_DONE"
 
-const bash = (command) => ({ type: "tool_call", name: "bash", arguments: { command } })
+const bash = (command) => ({ type: "tool_call", name: "eval", arguments: { language: "js", summary: "wait for the QA driver signal", code: `await tool.bash(${JSON.stringify({ command })})` } })
 const text = (value) => ({ type: "text", text: value })
 const spawnBackground = (prompt, name) => ({
   type: "tool_call",

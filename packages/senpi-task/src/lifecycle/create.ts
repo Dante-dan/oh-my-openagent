@@ -6,6 +6,7 @@ import { admitResident, reclaimIdleResidents, startIdleResidentReclaimer } from 
 import { reconcileOnSessionStart } from "./reconcile"
 import { rollbackDetachedRevival, reviveDetachedTerminal } from "./revive-detached"
 import { suspendOnSessionShutdown } from "./shutdown"
+import { failExpiredSuspendedTasks } from "./suspended-expiry"
 import { cleanupExpiredRecords } from "./ttl"
 import type { SuspendInput, TaskLifecycle } from "./types"
 
@@ -16,7 +17,10 @@ import type { SuspendInput, TaskLifecycle } from "./types"
  */
 export function createTaskLifecycle(deps: LifecycleDeps): TaskLifecycle {
   const context = resolveContext(deps)
-  const cleanup = () => cleanupExpiredRecords(context)
+  const cleanup = async () => {
+    failExpiredSuspendedTasks(context, context.currentParentSessionId?.())
+    return await cleanupExpiredRecords(context)
+  }
   registerLifecycleDetachedRevival(context.store, (taskId) => reviveDetachedTerminal(context, taskId))
   registerLifecycleDetachedRevivalRollback(context.store, (prior) => rollbackDetachedRevival(context, prior))
   const stopIdleReclaimer = startIdleResidentReclaimer(context, cleanup)
@@ -33,6 +37,7 @@ export function createTaskLifecycle(deps: LifecycleDeps): TaskLifecycle {
     admitResident: (parentSessionId: string) => admitResident(context, parentSessionId),
     reconcileOnSessionStart: async (parentSessionId?: string) => {
       const result = await reconcileOnSessionStart(context, parentSessionId)
+      failExpiredSuspendedTasks(context, parentSessionId)
       retryDeferredHostSessions(context, result.outcomes)
       return result
     },

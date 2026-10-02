@@ -79,6 +79,7 @@ export function parseTaskRecord(value: unknown, path: string, warnings?: string[
   const resumedRunEpoch = readOptionalNumber(value, "resumed_run_epoch")
   const startQueued = parseOptionalStartQueued(value)
   const runnerKind = readOptionalRunnerKind(value)
+  const suspendedAt = readOptionalString(value, "suspended_at")
   const suspensionReason = readOptionalSuspensionReason(value)
   const failureKind = readOptionalTaskStartFailureKind(value)
   const failureReason = readOptionalTaskStartFailureReason(value)
@@ -139,6 +140,7 @@ export function parseTaskRecord(value: unknown, path: string, warnings?: string[
     ...(reviveDeliveryUncertain === undefined ? {} : { revive_delivery_uncertain: reviveDeliveryUncertain }),
     ...(resumedRunEpoch === undefined ? {} : { resumed_run_epoch: resumedRunEpoch }),
     ...(startQueued === undefined ? {} : { start_queued: startQueued }),
+    ...(suspendedAt === undefined ? {} : { suspended_at: suspendedAt }),
     ...(suspensionReason === undefined ? {} : { suspension_reason: suspensionReason }),
     ...(runnerKind === undefined ? {} : { runner_kind: runnerKind }),
     ...(hostSession === undefined ? {} : { host_session: hostSession }),

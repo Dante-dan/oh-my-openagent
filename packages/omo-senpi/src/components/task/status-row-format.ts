@@ -77,6 +77,7 @@ export function formatTaskRow(record: TaskRecord): string {
   if (record.pid !== undefined) parts.push(`pid:${record.pid}`)
   const progress = progressHead(record)
   if (progress !== undefined) parts.push(`progress:${progress}`)
+  if (isSuspendedFailure(record)) parts.push(record.error_message ?? "")
   return parts.join(" ")
 }
 
@@ -87,7 +88,7 @@ function selectWidgetRecords(records: readonly TaskRecord[], residentTaskIds: Re
     && residentTaskIds.has(record.task_id)
     && parseTeamMemberTaskIdentity(record) !== undefined,
   )
-  return [...active, ...completedResidentMembers]
+  return [...active, ...records.filter(isSuspendedFailure), ...completedResidentMembers]
 }
 
 export function buildWidgetRows(records: readonly TaskRecord[], residentTaskIds: ReadonlySet<string> = new Set()): string[] {
@@ -194,7 +195,7 @@ export function backgroundWidgetRows(
     ? Math.min(LIVE_WIDGET_LINE_MAX, Math.floor(maxWidth))
     : LIVE_WIDGET_LINE_MAX
   const shown = selected.slice(0, MAX_WIDGET_ROWS).map((record) =>
-    record.status === "completed"
+    isTerminal(record.status)
       ? formatCompactTaskRow(record, boundedWidth, true)
       : formatLiveBackgroundRow(record, activity.get(record.task_id), now, boundedWidth, liveStats?.(record.task_id)),
   )
@@ -219,7 +220,12 @@ function compactTaskIdentity(record: TaskRecord, maxWidth: number, includeName: 
   )
 }
 
+function isSuspendedFailure(record: TaskRecord): boolean {
+  return record.status === "error" && record.error_message?.startsWith("failed: suspended_unresumable") === true
+}
+
 function compactTaskContext(record: TaskRecord): string {
+  if (isSuspendedFailure(record)) return excerptRendererText(record.error_message ?? "", 55)
   return [
     excerptRendererText(recordStatusTarget(record), 46),
     excerptRendererText(record.execution_mode, 10),
