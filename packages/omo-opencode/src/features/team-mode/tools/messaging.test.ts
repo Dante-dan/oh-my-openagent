@@ -172,6 +172,7 @@ afterEach(async () => {
   SessionCategoryRegistry.clear()
   clearAllSessionPromptParams()
   releaseAllPromptAsyncReservationsForTesting()
+  jest.restoreAllMocks()
   _resetForTesting()
   await Promise.all(temporaryDirectories.splice(0).map(async (directoryPath) => {
     await rm(directoryPath, { recursive: true, force: true })
@@ -652,6 +653,10 @@ describe("createTeamSendMessageTool", () => {
 
   test("#given a queued fallback message was already injected #when the prompt gate clears #then the obsolete wake is cancelled", async () => {
     // given
+    // Keep the blocker reserved until the explicit gate release, regardless of
+    // filesystem/runner latency. Queue draining still uses real timers.
+    const currentTime = Date.now()
+    spyOn(Date, "now").mockReturnValue(currentTime)
     const fixture = await createTeamFixture()
     const probeDispatched = createDeferred<void>()
     const promptTexts: string[] = []
@@ -717,6 +722,10 @@ describe("createTeamSendMessageTool", () => {
 
   test("#given a queued fallback message is pending acknowledgement #when the prompt gate clears #then the obsolete wake is cancelled", async () => {
     // given
+    // Keep the blocker reserved until the explicit gate release, regardless of
+    // filesystem/runner latency. Queue draining still uses real timers.
+    const currentTime = Date.now()
+    spyOn(Date, "now").mockReturnValue(currentTime)
     const fixture = await createTeamFixture()
     const probeDispatched = createDeferred<void>()
     const promptTexts: string[] = []
@@ -847,6 +856,10 @@ describe("createTeamSendMessageTool", () => {
 
   test("#given a queued fallback recipient shut down #when the prompt gate clears #then the obsolete wake is cancelled", async () => {
     // given
+    // Keep the blocker reserved until the explicit gate release, regardless of
+    // filesystem/runner latency. Queue draining still uses real timers.
+    const currentTime = Date.now()
+    spyOn(Date, "now").mockReturnValue(currentTime)
     const fixture = await createTeamFixture()
     const probeDispatched = createDeferred<void>()
     const promptTexts: string[] = []
@@ -911,6 +924,10 @@ describe("createTeamSendMessageTool", () => {
 
   test("#given a queued fallback team was deleted #when the prompt gate clears #then the obsolete wake is cancelled", async () => {
     // given
+    // Keep the blocker reserved until the explicit gate release, regardless of
+    // filesystem/runner latency. Queue draining still uses real timers.
+    const currentTime = Date.now()
+    spyOn(Date, "now").mockReturnValue(currentTime)
     const fixture = await createTeamFixture()
     const probeDispatched = createDeferred<void>()
     const promptTexts: string[] = []
