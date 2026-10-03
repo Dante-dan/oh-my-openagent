@@ -19,11 +19,12 @@ const spawnBackground = (prompt, name) => ({
 })
 
 export const RESUME_OMO_CONFIG = {
+  task: { default_execution_mode: "in-process" },
   categories: { mockcat: { description: "Local mock category pinned to the mock provider.", model: "omo-mock/mock-1" } },
 }
 
 export function resumeOmoConfig(taskOverrides) {
-  return taskOverrides === undefined ? RESUME_OMO_CONFIG : { ...RESUME_OMO_CONFIG, task: taskOverrides }
+  return taskOverrides === undefined ? RESUME_OMO_CONFIG : { ...RESUME_OMO_CONFIG, task: { ...RESUME_OMO_CONFIG.task, ...taskOverrides } }
 }
 
 // Run 1: spawn the mid-turn child and the finished child, then hold until the driver has observed
