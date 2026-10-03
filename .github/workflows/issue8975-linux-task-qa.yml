@@ -1,0 +1,72 @@
+name: Issue 8975 isolated Linux task QA
+on:
+  push:
+    branches: [recovery/8975-linux-inprocess-qa-20261004]
+permissions:
+  contents: read
+jobs:
+  task-qa:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      SOURCE_SHA: 8d68ebc6b3cfb1a276fc8a933d62d14687e029cc
+      RED_SOURCE_SHA: be8d09de1bc184f638354380a433e93d4f6d47f3
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.4.2"
+      - run: bun install --frozen-lockfile --ignore-scripts
+      - run: bun run script/remove-stale-self-package-tests.ts
+      - name: Build current plugin and record source provenance
+        run: |
+          bun run build:senpi-plugin
+          ev="$(node .agents/skills/senpi-qa/scripts/resolve-evidence-dir.mjs --repo-root "$PWD" --slug 20261004-8975-linux-task)"
+          mkdir -p "$ev"
+          echo "QA_EVIDENCE=$ev" >> "$GITHUB_ENV"
+          git rev-parse HEAD > "$ev/qa-workflow-sha.txt"
+          git rev-parse "$SOURCE_SHA" > "$ev/source-sha.txt"
+          git rev-parse "$RED_SOURCE_SHA" > "$ev/red-source-sha.txt"
+          git diff "$SOURCE_SHA" HEAD --name-only > "$ev/qa-wrapper-diff.txt"
+          node packages/omo-senpi/scripts/qa/drive.mjs --self-test > "$ev/drive-self-test.log"
+          node packages/omo-senpi/scripts/qa/task-e2e.mjs --self-test > "$ev/task-self-test.log"
+      - name: RED official pre-fix driver on the same built plugin
+        run: |
+          for file in task-e2e.mjs resume-e2e-runtime.mjs task-resume-e2e-scenarios.mjs; do
+            git show "$RED_SOURCE_SHA:packages/omo-senpi/scripts/qa/$file" > "packages/omo-senpi/scripts/qa/$file"
+          done
+          PATH="$PWD/node_modules/.bin:$PATH" SENPI_BIN="$PWD/node_modules/.bin/senpi" TASK_E2E_OUT_DIR="$QA_EVIDENCE/red" node packages/omo-senpi/scripts/qa/task-e2e.mjs > "$QA_EVIDENCE/red-driver.jsonl" 2>&1
+          git restore --source="$SOURCE_SHA" -- packages/omo-senpi/scripts/qa/task-e2e.mjs packages/omo-senpi/scripts/qa/resume-e2e-runtime.mjs packages/omo-senpi/scripts/qa/task-resume-e2e-scenarios.mjs
+          node --input-type=module - "$QA_EVIDENCE" <<'NODE'
+          import {readFileSync} from 'node:fs';
+          const ev=process.argv[2];
+          const result=JSON.parse(readFileSync(`${ev}/red-driver.jsonl`,'utf8').trim().split(String.fromCharCode(10)).at(-1));
+          if(result.result!=='FAIL') throw new Error('RED must demonstrate the pre-fix failure');
+          const capture=readFileSync(`${ev}/red/main.jsonl.log`,'utf8');
+          if(!capture.includes('child-prompt-failed')) throw new Error('RED did not reach the intended missing-provider failure');
+          NODE
+      - name: GREEN official current driver with isolation and PID verdicts
+        run: |
+          PATH="$PWD/node_modules/.bin:$PATH" SENPI_BIN="$PWD/node_modules/.bin/senpi" TASK_E2E_OUT_DIR="$QA_EVIDENCE/green" node packages/omo-senpi/scripts/qa/task-e2e.mjs > "$QA_EVIDENCE/green-driver.jsonl" 2>&1
+          node --input-type=module - "$QA_EVIDENCE" <<'NODE'
+          import {readFileSync} from 'node:fs';
+          const ev=process.argv[2];
+          const result=JSON.parse(readFileSync(`${ev}/green-driver.jsonl`,'utf8').trim().split(String.fromCharCode(10)).at(-1));
+          if(result.result!=='PASS'||result.realSenpiUntouched!==true||result.leakedPids!==0) throw new Error('GREEN live task/isolation/PID gate failed');
+          NODE
+      - name: Relevant checks and Senpi package gate
+        run: |
+          bun run typecheck
+          bun test packages/omo-senpi/scripts/qa/task-e2e-analysis.test.mjs packages/omo-senpi/scripts/qa/resume-e2e-runtime.test.mjs
+          bun run test:senpi
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: issue8975-linux-task-qa
+          path: .omo/evidence/omo-senpi-adapter/20261004-8975-linux-task/
