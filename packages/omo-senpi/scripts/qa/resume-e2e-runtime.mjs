@@ -10,6 +10,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 
 import { join } from "node:path"
 
 import { seedSandbox } from "./drive.mjs"
+import { seedTaskProvider } from "./task-provider-sandbox.mjs"
 import { isolatedChildEnv, sandboxStateDir } from "./sandbox-child-env.mjs"
 
 export function seedResumeProject(sandbox, omoConfig) {
@@ -20,6 +21,7 @@ export function seedResumeProject(sandbox, omoConfig) {
 }
 
 export function startResumeRun(input) {
+  seedTaskProvider(input.sandbox, input.mockProviderEntry)
   writeFileSync(join(input.sandbox.cwd, "mock-script.json"), `${JSON.stringify(input.script, null, 2)}\n`)
   const sessionDir = join(input.sandbox.root, "sessions")
   mkdirSync(sessionDir, { recursive: true })

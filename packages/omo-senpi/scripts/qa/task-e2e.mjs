@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { spawnSync } from "node:child_process"
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs"
 import { homedir } from "node:os"
 import { basename, delimiter, dirname, join, resolve } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
@@ -35,6 +35,8 @@ import { isAlive, killTree } from "./task-e2e-process.mjs"
 import { runTaskResumeScenarios } from "./task-resume-e2e.mjs"
 import { isolatedChildEnv, sandboxStateDir } from "./sandbox-child-env.mjs"
 
+import { seedTaskProvider } from "./task-provider-sandbox.mjs"
+
 const scriptDir = dirname(fileURLToPath(import.meta.url))
 const mockProviderEntry = join(scriptDir, "task-e2e-mock-provider.ts")
 const realSenpiAgentDir = join(homedir(), ".senpi", "agent")
@@ -52,6 +54,7 @@ function findOnPath(bin) {
 function seedScenario(script, { withMarker } = {}) {
   const sandbox = createSandbox()
   seedSandbox(sandbox)
+  seedTaskProvider(sandbox, mockProviderEntry)
   const sessionDir = join(sandbox.root, "sessions")
   mkdirSync(sessionDir, { recursive: true })
   const omoDir = join(sandbox.cwd, ".omo")
@@ -330,6 +333,24 @@ function runSelfTest() {
   if (configDelta.length !== 1 || configDelta[0] !== "settings.json") throw new Error("self-test: a real config change must be reported")
   const removalDelta = changedRealPaths(new Map([["auth.json", "x"]]), new Map())
   if (removalDelta.length !== 1 || removalDelta[0] !== "auth.json") throw new Error("self-test: a real config removal must be reported")
+  const sandbox = createSandbox()
+  const originalSpecPath = resolve(scriptDir, "../../plugin/daemon-launch-spec.json")
+  const originalSpec = readFileSync(originalSpecPath, "utf8")
+  try {
+    seedSandbox(sandbox)
+    const plugin = seedTaskProvider(sandbox, mockProviderEntry)
+    const spec = JSON.parse(readFileSync(join(plugin, "daemon-launch-spec.json"), "utf8"))
+    if (!spec.core.extensions.includes("./task-e2e-mock-provider.ts")) throw new Error("self-test: daemon must load the lane provider")
+    if (!existsSync(join(plugin, "task-e2e-mock-provider.ts"))) throw new Error("self-test: daemon provider must exist in its plugin root")
+    const settings = JSON.parse(readFileSync(join(sandbox.agentDir, "settings.json"), "utf8"))
+    if (settings.packages[0] !== plugin) throw new Error("self-test: parent must use the scenario-owned plugin")
+    if (readFileSync(originalSpecPath, "utf8") !== originalSpec) throw new Error("self-test: original plugin launch spec must stay unchanged")
+    seedTaskProvider(sandbox, mockProviderEntry)
+    const repeated = JSON.parse(readFileSync(join(plugin, "daemon-launch-spec.json"), "utf8"))
+    if (repeated.core.extensions.filter((entry) => entry === "./task-e2e-mock-provider.ts").length !== 1) throw new Error("self-test: repeated seeding must not duplicate providers")
+  } finally {
+    rmSync(sandbox.root, { recursive: true, force: true })
+  }
   console.log("SELF-TEST OK")
 }
 
