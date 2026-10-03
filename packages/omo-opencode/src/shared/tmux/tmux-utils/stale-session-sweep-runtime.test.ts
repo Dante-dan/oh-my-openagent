@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, mock } from "bun:test"
+import { beforeEach, describe, expect, it, mock, spyOn } from "bun:test"
 
 import type { TmuxCommandResult } from "../runner"
 
@@ -20,6 +20,10 @@ const killTmuxSessionIfExistsMock = mock(async (): Promise<boolean> => true)
 const isInsideTmuxMock = mock((): boolean => true)
 const getTmuxPathMock = mock(async (): Promise<string | undefined> => "sh")
 const logMock = mock(() => undefined)
+const deadPid = process.pid + 1
+const livePid = process.pid + 2
+const deadSession = `omo-agents-${deadPid}`
+const liveSession = `omo-agents-${livePid}`
 
 async function loadSweepStaleOmoAgentSessions(): Promise<typeof import("./stale-session-sweep").sweepStaleOmoAgentSessions> {
 	const module = await import(`${staleSessionSweepSpecifier}?test=${crypto.randomUUID()}`)
@@ -49,8 +53,8 @@ describe("sweepStaleOmoAgentSessions runtime runner integration", () => {
 
 		runTmuxCommandMock.mockResolvedValue({
 			success: true,
-			output: "omo-agents-99991\nomo-agents-99992",
-			stdout: "omo-agents-99991\nomo-agents-99992",
+			output: `${deadSession}\n${liveSession}`,
+			stdout: `${deadSession}\n${liveSession}`,
 			stderr: "",
 			exitCode: 0,
 		})
@@ -59,18 +63,30 @@ describe("sweepStaleOmoAgentSessions runtime runner integration", () => {
 		getTmuxPathMock.mockResolvedValue("sh")
 	})
 
-	it("#given stale sessions listed by tmux #when sweepStaleOmoAgentSessions called #then delegates list-sessions to shared runner", async () => {
+	it("#given dead and live sessions listed by tmux #when sweeping #then only kills the dead session through the shared runner", async () => {
 		// given
-		const sweepStaleOmoAgentSessions = await loadSweepStaleOmoAgentSessions()
+		const processKillSpy = spyOn(process, "kill").mockImplementation((pid) => {
+			if (pid === deadPid) {
+				throw Object.assign(new Error("No such process"), { code: "ESRCH" })
+			}
+			return true
+		})
 
-		// when
-		const result = await sweepStaleOmoAgentSessions()
+		try {
+			const sweepStaleOmoAgentSessions = await loadSweepStaleOmoAgentSessions()
 
-		// then
-		expect(result).toBe(2)
-		expect(runTmuxCommandMock.mock.calls).toEqual([
-			["sh", ["list-sessions", "-F", "#{session_name}"]],
-		])
-		expect(killTmuxSessionIfExistsMock).toHaveBeenCalledTimes(2)
+			// when
+			const result = await sweepStaleOmoAgentSessions()
+
+			// then
+			expect(result).toBe(1)
+			expect(runTmuxCommandMock.mock.calls).toEqual([
+				["sh", ["list-sessions", "-F", "#{session_name}"]],
+			])
+			expect(processKillSpy.mock.calls).toEqual([[deadPid, 0], [livePid, 0]])
+			expect(killTmuxSessionIfExistsMock.mock.calls).toEqual([[deadSession]])
+		} finally {
+			processKillSpy.mockRestore()
+		}
 	})
 })
