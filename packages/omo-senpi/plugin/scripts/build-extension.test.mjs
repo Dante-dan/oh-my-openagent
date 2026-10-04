@@ -249,6 +249,13 @@ describe("checkExtensionCurrent", () => {
     }
   })
 
+  test("#given the split LSP formatter #when build inputs are inspected #then formatting stays outside startup", async () => {
+    const { mainInputs, lspFormatterInputs } = await sharedOutputs()
+    const suffix = "packages/omo-senpi/src/components/formatter/formatter.ts"
+    expect(mainInputs.some(input => toPortableBuildPath(input).endsWith(suffix))).toBe(false)
+    expect(lspFormatterInputs.some(input => toPortableBuildPath(input).endsWith(suffix))).toBe(true)
+  })
+
   test("#given a packaged task import map #when generated artifacts are inspected #then the main bundle resolves its task sidecar", async () => {
     const outputs = await sharedOutputs()
     const main = await readFile(outputs.outputPath, "utf8")
@@ -264,6 +271,7 @@ describe("checkExtensionCurrent", () => {
       "#omo-task-runtime": "./extensions/omo-task.js",
       "#omo-computer-use-runtime": "./extensions/omo-computer-use.js",
       "#omo-memory-doctor-runtime": "./extensions/omo-memory-doctor.js",
+      "#omo-lsp-formatter-runtime": "./extensions/omo-lsp-formatter.js",
       "#omo-memory-memfs-runtime": "./extensions/omo-memory-memfs.js",
       "#omo-agent-toolkit-sdk": "./runtime/agent-toolkit-sdk/sdk.js",
     })
