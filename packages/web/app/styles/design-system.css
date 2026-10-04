@@ -209,7 +209,8 @@
     --lit-follow-fade: 22vh;
     --lit-follow-gap: 1.25em;
     --lit-follow-rise: var(--space-6);
-    --lit-line: 78vh;
+    /* 82vh after subtracting the band leaves 75–80vh fully lit after glyph/stagger costs. */
+    --lit-line: 90vh;
     --lit-band: 8vh;
     --dur-swap-out: 80ms;
     --dur-swap-in: 220ms;

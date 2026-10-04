@@ -105,12 +105,14 @@ jobs:
         env:
           NEXT_TELEMETRY_DISABLED: "1"
 
-      - name: Upload glyph failure evidence
-        if: failure()
+      - name: Upload reading evidence
+        if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: manifesto-glyph-failures
-          path: packages/web/test-results/**/.attachments/glyph-*
+          name: manifesto-reading-evidence
+          path: |
+            packages/web/test-results/**/.attachments/glyph-*
+            packages/web/test-results/**/.attachments/depth-*
           include-hidden-files: true
           if-no-files-found: ignore
           retention-days: 7

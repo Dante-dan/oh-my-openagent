@@ -293,11 +293,11 @@ for (const locale of ["en", "ko"]) {
             await page.evaluate(scrollSecret, y)
             await settle()
             // Q's contract, asserted directly: everything already revealed stays lit and the top of
-            // the screen is fully readable. A word at or above the full line (--lit-line -
-            // --lit-band = 70vh) is fully lit; the reveal never gates reading on scroll.
+            // the screen is readable. The separate wheel-scroll test measures the actual
+            // fully-lit depth against the issue acceptance thresholds.
             const state = await page.evaluate(() => {
               const viewport = innerHeight
-              const fullLine = viewport * 0.7
+              const fullLine = viewport * 0.72
               let dimAboveLine = 0
               let litBelowMid = 0
               let aboveMid = 0
@@ -627,6 +627,109 @@ for (const locale of ["en", "ko"]) {
             }
           }
         }
+      })
+    })
+  }
+}
+
+// #9591 measures the actual frontier, including word height and within-line stagger.
+for (const locale of ["en", "ko"]) {
+  for (const width of [390, 1440, 1920]) {
+    test.describe(`readable depth ${locale} ${width}`, () => {
+      test.use({ viewport: { width, height: width === 390 ? 844 : 900 } })
+      test("wheel scrolling leaves a fully lit reading screenful", async ({ page }) => {
+        test.setTimeout(120000)
+        await page.emulateMedia({ reducedMotion: "no-preference" })
+        await page.goto(`/${locale}/manifesto`)
+        await page.evaluate(waitForReadingBlocks)
+        const maxY = await page.evaluate(() => document.documentElement.scrollHeight - innerHeight)
+        async function measure(name: string) {
+          await page.evaluate(scrollSecret, 0)
+          const depths: number[] = []
+          let captured = false
+          for (let y = 0; y < maxY; y += 100) {
+            await page.mouse.wheel(0, 100)
+            await page.evaluate(
+              () =>
+                new Promise((resolve) =>
+                  requestAnimationFrame(() =>
+                    requestAnimationFrame(() => requestAnimationFrame(resolve)),
+                  ),
+                ),
+            )
+            const state = await page.evaluate(() => {
+              const visible: { top: number; brightness: number }[] = []
+              let violations = 0
+              for (const body of document.querySelectorAll(".lit-read .lit-text")) {
+                let previous = 1
+                for (const word of body.querySelectorAll<HTMLElement>(".lit-word")) {
+                  const brightness = Number.parseFloat(
+                    getComputedStyle(word).getPropertyValue("--lit-local"),
+                  )
+                  if (brightness > previous + 0.001) violations += 1
+                  previous = brightness
+                  const rect = word.getBoundingClientRect()
+                  if (rect.bottom > 0 && rect.top < innerHeight)
+                    visible.push({ top: rect.top, brightness })
+                }
+              }
+              const dim = visible.filter((word) => word.brightness < 0.99)
+              const lit = visible.some((word) => word.brightness >= 0.99)
+              return {
+                depth:
+                  lit && dim.length
+                    ? Math.max(0, Math.min(...dim.map((word) => word.top))) / innerHeight
+                    : null,
+                violations,
+                scrollY,
+              }
+            })
+            expect(state.violations, `${name} at ${state.scrollY}`).toBe(0)
+            if (state.depth !== null) depths.push(state.depth)
+            if (!captured && state.scrollY >= maxY * 0.4) {
+              await test.info().attach(`depth-${locale}-${width}-${name}`, {
+                body: await page.screenshot({ animations: "disabled", scale: "css" }),
+                contentType: "image/png",
+              })
+              captured = true
+            }
+          }
+          expect(depths.length, `${name} needs active reveal frames`).toBeGreaterThan(0)
+          depths.sort((a, b) => a - b)
+          return {
+            min: depths[0]!,
+            median: depths[Math.floor(depths.length / 2)]!,
+            samples: depths.length,
+          }
+        }
+        const baseline = await page.addStyleTag({
+          content: ".lit-read { --lit-line: 78vh !important; --lit-band: 8vh !important; }",
+        })
+        const before = await measure("before")
+        await baseline.evaluate((style) => style.parentNode?.removeChild(style))
+        const after = await measure("after")
+        await test.info().attach(`depth-${locale}-${width}-measurements`, {
+          body: JSON.stringify({ locale, width, before, after }),
+          contentType: "application/json",
+        })
+        expect(after.median).toBeGreaterThanOrEqual(0.75)
+        expect(after.min).toBeGreaterThanOrEqual(0.72)
+      })
+      test("reduced motion keeps reading words lit without animation", async ({ page }) => {
+        await page.emulateMedia({ reducedMotion: "reduce" })
+        await page.goto(`/${locale}/manifesto`)
+        await page.evaluate(waitForReadingBlocks)
+        const state = await page.evaluate(() => ({
+          allLit: Array.from(document.querySelectorAll<HTMLElement>(".lit-read .lit-word")).every(
+            (word) =>
+              Number.parseFloat(getComputedStyle(word).getPropertyValue("--lit-local")) >= 1,
+          ),
+          animations: Array.from(document.querySelectorAll(".lit-read")).flatMap((block) =>
+            block.getAnimations({ subtree: true }),
+          ).length,
+        }))
+        expect(state.allLit).toBe(true)
+        expect(state.animations).toBe(0)
       })
     })
   }
