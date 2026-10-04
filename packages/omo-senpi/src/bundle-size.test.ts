@@ -103,7 +103,10 @@ const builtExtensionPath = join(packageRoot, "plugin", "extensions", "omo.js")
 // Reduced for #9515: lazy /doctor moves health checks into omo-memory-doctor.js.
 // Same-host Bun 1.4.2 rebuild: 1,458,902 -> 1,450,566 bytes (8,336 removed);
 // 1,494,000 leaves approximately 3% headroom. Other memory/thread/LSP slices remain follow-up.
-const BUDGET_BYTES = 1_494_000
+// Narrow formatter LSP imports for #9515 (dev eb6926949, Bun 1.4.2 / Node 24.12.0):
+// 1,452,145 -> 1,369,653 bytes, with the existing helper implementations unchanged.
+// 1,411,000 retains approximately 3% headroom; remaining lazy component slices stay open.
+const BUDGET_BYTES = 1_411_000
 
 describe("omo-senpi bundle size budget", () => {
   it("#given the built extension #when its byte size is measured #then it stays within the documented byte budget", () => {

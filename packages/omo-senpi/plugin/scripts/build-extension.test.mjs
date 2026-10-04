@@ -226,6 +226,25 @@ describe("checkExtensionCurrent", () => {
     expect(inMain("packages/senpi-desktop-tool/src/registration.ts")).toBe(true)
   })
 
+  test("#given the formatter imports #when main inputs are inspected #then only its owned LSP helpers enter the bundle", async () => {
+    const { mainInputs } = await sharedOutputs()
+    const inMain = (suffix) => mainInputs.some((input) => toPortableBuildPath(input).endsWith(suffix))
+    for (const suffix of [
+      "packages/lsp-core/src/index.ts",
+      "packages/lsp-core/src/tools.ts",
+      "packages/lsp-core/src/lsp/client.ts",
+      "packages/lsp-core/src/lsp/manager.ts",
+    ]) {
+      expect(inMain(suffix), suffix).toBe(false)
+    }
+    for (const suffix of [
+      "packages/lsp-core/src/lsp/process.ts",
+      "packages/lsp-core/src/lsp/server-installation.ts",
+    ]) {
+      expect(inMain(suffix), suffix).toBe(true)
+    }
+  })
+
   test("#given the split extension build #when doctor inputs are inspected #then health checks load only from the lazy entry", async () => {
     const { mainInputs, memoryDoctorInputs } = await sharedOutputs()
     for (const suffix of [
