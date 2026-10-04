@@ -249,6 +249,12 @@ describe("checkExtensionCurrent", () => {
     }
   })
 
+  test("#given a missing formatter sidecar #when freshness is checked #then it reports that runtime artifact", async () => {
+    const outputs = await mutableOutputs()
+    await rm(outputs.lspFormatterOutputPath)
+    expect(await checkExtensionCurrent(outputs)).toMatchObject({ ok: false, reason: "missing-output", output: outputs.lspFormatterOutputPath })
+  })
+
   test("#given the split LSP formatter #when build inputs are inspected #then formatting stays outside startup", async () => {
     const { mainInputs, lspFormatterInputs } = await sharedOutputs()
     const suffix = "packages/omo-senpi/src/components/formatter/formatter.ts"
@@ -264,6 +270,7 @@ describe("checkExtensionCurrent", () => {
 
     expect(main).toContain('import("#omo-task-runtime")')
     expect(main).toContain('import("#omo-memory-memfs-runtime")')
+    expect(main).toContain('import("#omo-lsp-formatter-runtime")')
     expect(task).toMatch(/^\/\/ omo:[A-Za-z0-9_-]{43}:[A-Za-z0-9_-]{43}/)
     expect(main).not.toContain('import("#omo-agent-toolkit-runtime")')
     expect(manifest.imports).not.toHaveProperty("#omo-agent-toolkit-runtime")
