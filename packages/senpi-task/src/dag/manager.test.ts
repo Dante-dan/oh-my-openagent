@@ -682,7 +682,7 @@ describe("createDagManager concurrent starts", () => {
     const runs = runFiles(store)
     expect(runs).toHaveLength(1)
     expect(outcomes.filter((outcome) => outcome.ok)).toHaveLength(1)
-    expect(outcomes.filter((outcome) => outcome.code === "definition_conflict")).toHaveLength(1)
+    expect(outcomes.filter((outcome) => outcome.code === "definition_conflict"), JSON.stringify(outcomes)).toHaveLength(1)
     const winner = outcomes.find((outcome) => outcome.ok)?.runId as DagRunId
     const checkpoint = store.readCheckpoint<{ readonly definitionFingerprint: string }>(winner)
     expect(store.readKey(parentSessionId, "release-plan")).toMatchObject({
