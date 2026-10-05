@@ -249,20 +249,19 @@ describe("checkExtensionCurrent", () => {
     }
   })
 
-  test("#given the split extension build #when memory compile inputs are inspected #then compilation and rendering load only from the lazy entry", async () => {
+  test("#given the split extension build #when memory compile inputs are inspected #then the compiler and cache load only from the lazy entry", async () => {
     const { mainInputs, memoryCompileInputs, outputPath, memoryCompileOutputPath } = await sharedOutputs()
     for (const suffix of [
       "packages/memory-core/src/compile/cache.ts",
       "packages/memory-core/src/compile/compile.ts",
     ]) {
-      expect(mainInputs.some((input) => toPortableBuildPath(input).endsWith(suffix)), suffix).toBe(false)
       expect(memoryCompileInputs.some((input) => toPortableBuildPath(input).endsWith(suffix)), suffix).toBe(true)
     }
-    // Sentinel replacement stays synchronous; the heavy tree renderer in the same core module does not.
-    const main = await readFile(outputPath, "utf8")
-    const runtime = await readFile(memoryCompileOutputPath, "utf8")
-    expect(main).not.toContain("function renderSystemTree(")
-    expect(runtime).toContain("function renderSystemTree(")
+    // The core barrel is traversed even for tree-shaken exports, so input presence alone is not
+    // emitted-code evidence. The cache's template-hash protocol marker survives only where it executes.
+    expect(mainInputs.some((input) => toPortableBuildPath(input).endsWith("memory/memory-compile-runtime.ts"))).toBe(false)
+    expect(await readFile(outputPath, "utf8")).not.toContain("senpi-memory-v2")
+    expect(await readFile(memoryCompileOutputPath, "utf8")).toContain("senpi-memory-v2")
   })
 
   test("#given a packaged task import map #when generated artifacts are inspected #then the main bundle resolves its task sidecar", async () => {
