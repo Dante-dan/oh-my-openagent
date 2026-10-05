@@ -249,6 +249,22 @@ describe("checkExtensionCurrent", () => {
     }
   })
 
+  test("#given the split extension build #when memory compile inputs are inspected #then compilation and rendering load only from the lazy entry", async () => {
+    const { mainInputs, memoryCompileInputs, outputPath, memoryCompileOutputPath } = await sharedOutputs()
+    for (const suffix of [
+      "packages/memory-core/src/compile/cache.ts",
+      "packages/memory-core/src/compile/compile.ts",
+    ]) {
+      expect(mainInputs.some((input) => toPortableBuildPath(input).endsWith(suffix)), suffix).toBe(false)
+      expect(memoryCompileInputs.some((input) => toPortableBuildPath(input).endsWith(suffix)), suffix).toBe(true)
+    }
+    // Sentinel replacement stays synchronous; the heavy tree renderer in the same core module does not.
+    const main = await readFile(outputPath, "utf8")
+    const runtime = await readFile(memoryCompileOutputPath, "utf8")
+    expect(main).not.toContain("function renderSystemTree(")
+    expect(runtime).toContain("function renderSystemTree(")
+  })
+
   test("#given a packaged task import map #when generated artifacts are inspected #then the main bundle resolves its task sidecar", async () => {
     const outputs = await sharedOutputs()
     const main = await readFile(outputs.outputPath, "utf8")
@@ -257,6 +273,7 @@ describe("checkExtensionCurrent", () => {
 
     expect(main).toContain('import("#omo-task-runtime")')
     expect(main).toContain('import("#omo-memory-memfs-runtime")')
+    expect(main).toContain('import("#omo-memory-compile-runtime")')
     expect(task).toMatch(/^\/\/ omo:[A-Za-z0-9_-]{43}:[A-Za-z0-9_-]{43}/)
     expect(main).not.toContain('import("#omo-agent-toolkit-runtime")')
     expect(manifest.imports).not.toHaveProperty("#omo-agent-toolkit-runtime")
@@ -265,6 +282,7 @@ describe("checkExtensionCurrent", () => {
       "#omo-computer-use-runtime": "./extensions/omo-computer-use.js",
       "#omo-memory-doctor-runtime": "./extensions/omo-memory-doctor.js",
       "#omo-memory-memfs-runtime": "./extensions/omo-memory-memfs.js",
+      "#omo-memory-compile-runtime": "./extensions/omo-memory-compile.js",
       "#omo-agent-toolkit-sdk": "./runtime/agent-toolkit-sdk/sdk.js",
     })
   })
