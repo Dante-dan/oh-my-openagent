@@ -6,6 +6,7 @@ import { classifyPostEditFileLocation, type PostEditDiagnosticsOutcome } from "@
 import { resolveAgentHome } from "../agent-home/resolve-agent-home";
 import { resolveSessionAgentDir } from "../memory/session-context-resolver";
 import type { createFormatterStep } from "../formatter/formatter";
+import { MUTATION_TOOL_NAMES } from "../post-mutation/post-mutation";
 import { createLazyValue, deferUntilAfterFirstPaint } from "../../extension/startup-deferral";
 import type { ComponentContext, OmoSenpiComponent, SenpiExtensionAPI } from "../../extension/types";
 import {
@@ -92,7 +93,7 @@ export function createLspComponent(options: LspComponentOptions = {}): OmoSenpiC
 
 			pi.on("tool_result", async (event, eventCtx) => {
 					const parsed = isToolResultLike(event) ? event : undefined;
-					if (!parsed || parsed.isError || !["write", "edit", "apply_patch"].includes(parsed.toolName)) return undefined;
+					if (!parsed || parsed.isError || !MUTATION_TOOL_NAMES.has(parsed.toolName)) return undefined;
 					const formatted = await (await formatMutation.get())(parsed, pi.cwd ?? process.cwd(), sessionIdFromContext(eventCtx));
 					const afterFormat = formatted.content ? { ...parsed, content: [...parsed.content, ...formatted.content] } : parsed;
 					if (formatted.error) return { content: afterFormat.content, isError: true };
