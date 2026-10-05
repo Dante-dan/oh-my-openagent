@@ -45,4 +45,3 @@ export function kibitzerConfigurationFailure(error: unknown): KibitzerWakeConfig
     ...(error.missingProviders === undefined ? {} : { missingProviders: error.missingProviders }),
   }
 }
-
