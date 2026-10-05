@@ -18,6 +18,28 @@ function closedRunnerError(
 }
 
 describe("TaskManager host start failures", () => {
+  test("#given an insecure launch spec #when process start fails #then the record and result name the reason without leaking the install path", async () => {
+    const runner = new FakeRunner()
+    runner.startError = closedRunnerError("host_unavailable", "launch_spec_insecure")
+    const { manager, store } = makeManager({ process: runner })
+
+    const result = await manager.start({
+      prompt: "work",
+      parent_session_id: "parent-1",
+      depth: 1,
+      category: "quick",
+      execution_mode: "process",
+    })
+
+    if (result.kind !== "start_failed") throw new Error("expected start_failed")
+    expect(result.failure_reason).toBe("launch_spec_insecure")
+    expect(result.error_message).toContain("launch_spec_insecure")
+    expect(result.error_message).not.toContain(PRIVATE_DETAIL)
+    const record = store.load(result.task_id)
+    expect(record?.failure_reason).toBe("launch_spec_insecure")
+    expect(record?.error_message).toBe(result.error_message)
+  })
+
   test("#given the shared host times out opening a child session #when start fails #then the result and record name the closed failure class", async () => {
     // given
     const runner = new FakeRunner()

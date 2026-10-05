@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { chmodSync, cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join, resolve } from "node:path"
 import { spawnSync } from "node:child_process"
@@ -43,6 +43,7 @@ function createFixture(): Fixture {
   writeFile(join(senpiRoot, "dist", "cli.js"), "process.exit(0)\n")
   writeFile(join(senpiRoot, "dist", "core", "brand.js"), "export {}\n")
   for (const [, artifact] of artifacts) writeFile(join(packageRoot, artifact))
+  writeFile(join(packageRoot, "plugin", "daemon-launch-spec.json"), "{}\n")
   const agentDir = join(root, "agent")
   mkdirSync(agentDir, { recursive: true })
   return { root, packageRoot, launcher: join(packageRoot, "bin", "omo.js"), agentDir }
@@ -60,6 +61,18 @@ afterEach(() => {
 })
 
 describe("omo doctor", () => {
+  test.skipIf(process.platform === "win32")("#given a 0664 packaged launch spec #when doctor runs #then it names the insecure permission without changing the file", () => {
+    const fixture = createFixture()
+    const spec = join(fixture.packageRoot, "plugin", "daemon-launch-spec.json")
+    chmodSync(spec, 0o664)
+
+    const result = run(fixture)
+
+    expect(result.status).toBe(1)
+    expect(result.stdout).toContain("launch_spec_insecure")
+    expect(result.stdout).toContain("plugin/daemon-launch-spec.json")
+  })
+
   describe("#given a complete packaged installation", () => {
     describe("#when diagnostics run", () => {
       test("#then every required check passes", () => {

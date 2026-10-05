@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { ENGINE_PREPARED_STAMP, ensureEnginePrepared } from "../bin/lib/engine-prepare.js"
@@ -28,8 +28,8 @@ function createEngine(uaVersion: string): string {
   return root
 }
 
-function prepareOnce(root: string, reported: string[] = []) {
-  ensureEnginePrepared({ senpiRoot: root, omoVersion: OMO_VERSION, reinstallCommand: REINSTALL, report: (line: string) => reported.push(line) })
+function prepareOnce(root: string, reported: string[] = [], pluginRoot?: string) {
+  ensureEnginePrepared({ senpiRoot: root, pluginRoot, omoVersion: OMO_VERSION, reinstallCommand: REINSTALL, report: (line: string) => reported.push(line) })
 }
 
 const readUa = (root: string) => readFileSync(join(root, PI_AI_MESSAGES), "utf8")
@@ -40,6 +40,20 @@ afterEach(() => {
 })
 
 describe("launcher engine preparation (#8713)", () => {
+  test.skipIf(process.platform === "win32")("#given an npm-style 0664 packaged spec #when the engine is first prepared #then the spec becomes non-writable by group and world", () => {
+    const root = createEngine("2.1.251")
+    const pluginRoot = join(root, "plugin")
+    mkdirSync(pluginRoot)
+    const spec = join(pluginRoot, "daemon-launch-spec.json")
+    writeFileSync(spec, "{}\n")
+    chmodSync(spec, 0o664)
+
+    prepareOnce(root, [], pluginRoot)
+
+    expect(statSync(spec).mode & 0o777).toBe(0o644)
+    expect(readStamp(root)).toBe(OMO_VERSION)
+  })
+
   describe("#given an engine that postinstall never prepared", () => {
     test("#then the launch prepares it and stamps it with the omo-ai version", () => {
       const root = createEngine("2.1.251")

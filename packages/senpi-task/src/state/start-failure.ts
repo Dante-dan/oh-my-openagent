@@ -25,6 +25,7 @@ export const HOST_START_FAILURE_REASONS = [
   "win32",
   "runtime",
   "host_unreachable",
+  "launch_spec_insecure",
   "ensure_failed",
   "ensure_timed_out",
   "shard_socket_too_long",

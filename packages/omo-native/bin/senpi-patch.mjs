@@ -23,5 +23,5 @@ try {
   throw new Error("omo-ai: unable to resolve the installed @code-yeongyu/senpi package", { cause: error })
 }
 
-prepareInstalledEngine(senpiRoot)
+prepareInstalledEngine(senpiRoot, join(packageRoot, "plugin"))
 writeEnginePreparedStamp(senpiRoot, JSON.parse(readFileSync(join(packageRoot, "package.json"), "utf8")).version)

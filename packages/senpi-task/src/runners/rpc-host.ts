@@ -14,6 +14,7 @@ import {
   type ShardResolver,
 } from "./rpc-host/child-endpoint"
 import { HostUnavailableError, ensureTaskDaemon, forgetTaskDaemon } from "./rpc-host/daemon"
+import { DaemonLaunchSpecError } from "./rpc-host/launch-spec"
 import { recordedEndpointFailure } from "./rpc-host/endpoint-failure"
 import { onceNoticeSink, type HostNoticeSink } from "./rpc-host/host-notice"
 import type { HostShardEvents } from "./rpc-host/handle-reattach"
@@ -230,6 +231,8 @@ export class RpcHostRunner {
         message: error instanceof Error ? error.message : String(error),
         ...(error instanceof HostUnavailableError
           ? { reason: error.reason }
+          : error instanceof DaemonLaunchSpecError && error.code === "launch_spec_insecure"
+            ? { reason: error.code }
           : hostUnreachable
             ? { reason: "host_unreachable" as const }
             : {}),

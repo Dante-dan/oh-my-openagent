@@ -127,6 +127,7 @@ function preparedSenpi() {
   const senpi = resolveSenpi()
   ensureEnginePrepared({
     senpiRoot: senpi.packageRoot,
+    pluginRoot: join(packageRoot, "plugin"),
     omoVersion: packageManifest().version,
     reinstallCommand: updateTarget().command,
   })

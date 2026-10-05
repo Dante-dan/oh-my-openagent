@@ -17,6 +17,7 @@ const REASON_MESSAGES: Readonly<Partial<Record<TaskStartFailureReason, string>>>
     "The task child could not confirm this model in time: its model catalog probe timed out.",
   catalog_probe_failed: "The task child cannot serve this model: its model catalog probe failed.",
   host_unreachable: "The task host is unreachable (host_unreachable).",
+  launch_spec_insecure: "The task host launch spec is writable by another user (launch_spec_insecure). Reinstall omo-ai or set the spec file to mode 0644.",
   ensure_failed: "The task host could not be ensured (ensure_failed).",
   ensure_timed_out:
     "The task host did not become ready before the ensure deadline (ensure_timed_out).",

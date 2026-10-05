@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process"
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs"
+import { existsSync, lstatSync, readFileSync, readdirSync, statSync } from "node:fs"
 import { homedir } from "node:os"
 import { join, resolve } from "node:path"
 import { canonicalAgentDir } from "./agent-dir.js"
@@ -32,6 +32,20 @@ const artifacts = [
   ["extension", "plugin/extensions/omo.js"],
   ["lsp-daemon runtime", "plugin/runtime/lsp-daemon/dist/cli.js"],
 ]
+
+function launchSpecReport(pluginRoot = join(packageRoot, "plugin")) {
+  const spec = join(pluginRoot, "daemon-launch-spec.json")
+  try {
+    const stat = lstatSync(spec)
+    if (!stat.isFile()) return "FAIL daemon launch spec is not a regular file"
+    if (process.platform !== "win32" && ((stat.mode & 0o022) !== 0 || (process.getuid?.() !== undefined && stat.uid !== process.getuid()))) {
+      return "FAIL daemon launch spec is insecure (launch_spec_insecure); reinstall omo-ai or set plugin/daemon-launch-spec.json to mode 0644"
+    }
+    return "PASS daemon launch spec permissions"
+  } catch {
+    return "FAIL daemon launch spec is missing or unreadable"
+  }
+}
 
 function pass(lines, message) {
   lines.push(`PASS ${message}`)
@@ -359,6 +373,9 @@ export function runDoctor(inventory, args = [], options = {}) {
       failed = true
     }
   }
+  const launchSpecLine = launchSpecReport(options.pluginRoot)
+  lines.push(launchSpecLine)
+  if (launchSpecLine.startsWith("FAIL ")) failed = true
 
   let senpi
   try {

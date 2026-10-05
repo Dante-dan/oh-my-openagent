@@ -5,6 +5,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 
 import { RunnerError } from "./in-process/runner-error"
+import { DaemonLaunchSpecError } from "./rpc-host/launch-spec"
 import { RpcHostRunner, type HostSessionChannel } from "./rpc-host"
 import { childSpec, tempAgentDir, testRouting } from "./rpc-host.test-support"
 
@@ -21,6 +22,22 @@ function routing(socket: string) {
 }
 
 describe("RpcHostRunner host failure classification", () => {
+  test("#given an insecure packaged launch spec #when host ensure fails #then the closed reason is retained", async () => {
+    const runner = new RpcHostRunner({
+      policy: "upgrade",
+      ...routing("/tmp/host.sock"),
+      modelAdmission: async () => {},
+      ensureDaemon: () => Promise.reject(new DaemonLaunchSpecError("launch_spec_insecure", "launch_spec_insecure: /private/install/path")),
+    })
+
+    const failure = await runner.start(childSpec()).catch((error: unknown) => error)
+
+    expect(RunnerError.is(failure) ? failure.failure : undefined).toMatchObject({
+      kind: "host_unavailable",
+      reason: "launch_spec_insecure",
+    })
+  })
+
   test("#given the daemon transport is unreachable #when a child starts #then the runner raises host_unavailable with a closed reason", async () => {
     // given
     const transportError = Object.assign(
