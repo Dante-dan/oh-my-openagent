@@ -8,6 +8,7 @@ import type { RecallCandidate, RecallNudge } from "@oh-my-opencode/memory-core"
 import type { ChildHandle, RunnerOutcome } from "@oh-my-opencode/senpi-task"
 
 import type { SidecarAdmission } from "./sidecar-admission"
+import { StartupOfferedPaths } from "./startup-offered-paths"
 import type { KibitzerOfferResult } from "./sidecar-contract"
 import { describe, type Child, type Envelope, type Payload, type SidecarCore, type Turn } from "./sidecar-core"
 import { envelopeInput, merge, payloadOf } from "./sidecar-envelope"
@@ -92,7 +93,7 @@ export function createWakeTransitions(core: SidecarCore, turns: TurnLifecycle, a
     turn.lease = admitted.lease
     turn.slotWaitMs = admitted.waitedMs
     const tools = core.options.createTools({
-      nudge: { offered: core.offered, surfaced: core.surfaced, maxItems, accepted: () => core.accepted },
+      nudge: { offered: new StartupOfferedPaths(core.offered, fresh), surfaced: core.surfaced, maxItems, accepted: () => core.accepted },
       budget: () => core.budget,
     })
     // Armed before the I/O it bounds: a `startChild` that never returns holds the machine-wide wake
