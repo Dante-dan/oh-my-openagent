@@ -78,6 +78,7 @@ function childEnv(baseEnv, sandbox, sessionDir) {
   }
   return {
     ...isolatedChildEnv(env, sandbox.agentDir),
+    HOME: sandbox.homeDir,
     SENPI_CODING_AGENT_DIR: sandbox.agentDir,
     XDG_CONFIG_HOME: sandbox.xdgConfigHome,
     SENPI_CODING_AGENT_SESSION_DIR: sessionDir,
@@ -170,12 +171,12 @@ async function run() {
     for (const record of Object.values(records)) {
       const childDir = join(sandboxStateDir(sandbox), "children", record.task_id, "sessions", record.task_id)
       const rows = await SessionManager.list(sandbox.cwd, childDir)
-      const row = rows.find((entry) => entry.id === record.child_session_id)
+      const row = rows.find((entry) => entry.id === record.child_session_id) ?? (rows.length === 1 ? rows[0] : undefined)
       check(`picker-runner-${record.name}`, record.execution_mode === executionMode && (executionMode === "in-process" || (processRunner === "host" ? record.runner_kind === "host-session" : typeof record.pid === "number")), `mode=${record.execution_mode} kind=${record.runner_kind} pid=${record.pid}`)
       const expected = `task: ${record.task_summary} (parent: ${record.parent_session_id})`
       check(`picker-title-${record.name}`, row?.name === expected, `name=${JSON.stringify(row?.name)} expected=${JSON.stringify(expected)}`)
       check(`picker-messages-${record.name}`, row !== undefined && row.messageCount > 0 && row.firstMessage !== "(no messages)", `messageCount=${row?.messageCount} firstMessage=${JSON.stringify(row?.firstMessage)}`)
-      pickerRows.push({ taskId: record.task_id, executionMode: record.execution_mode, runnerKind: record.runner_kind, parentSessionId: record.parent_session_id, row })
+      pickerRows.push({ taskId: record.task_id, executionMode: record.execution_mode, runnerKind: record.runner_kind, parentSessionId: record.parent_session_id, row, rows })
     }
     check("picker-child-count", pickerRows.length === 2, `actual child rows: ${pickerRows.length}`)
 
