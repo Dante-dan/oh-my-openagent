@@ -154,7 +154,7 @@ export function createMemoryNudgeWiring(options: MemoryNudgeWiringOptions): Memo
       }
       const check = (async () => {
         try {
-          const head = await repo.head(500)
+          const head = await repo.head(500, true)
           let savedAt = state.savedAtTurn ?? state.sessionBaselineTurns
           if (head !== null && head !== state.checkedHead) {
             const history = await repo.log({

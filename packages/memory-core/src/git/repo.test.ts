@@ -27,6 +27,13 @@ afterEach(async () => {
 })
 
 describe("GitMemoryRepo", () => {
+  it("#given a git permission failure #when HEAD is read strictly for a nudge #then it is not mistaken for an unborn repository", async () => {
+    const repo = new GitMemoryRepo({ dir: "/unused", agentId: "agent-one",
+      exec: { run: async () => ({ code: 128, stdout: "", stderr: "fatal: permission denied" }) } })
+    expect(await rejectedError(repo.head(500, true))).toBeInstanceOf(Error)
+    expect(await repo.head()).toBeNull()
+  })
+
   it("#given a committed HEAD with a fixed committer date #when timestamp is read #then epoch seconds are returned", async () => {
     // given
     const { dir, repo } = await createRepo()

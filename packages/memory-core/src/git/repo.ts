@@ -126,9 +126,14 @@ export class GitMemoryRepo {
     return (await this.git(["-c", "core.quotePath=false", "status", "--porcelain", "--untracked-files=all", ...suffix])).stdout
   }
 
-  async head(timeoutMs = GIT_TIMEOUT_MS): Promise<string | null> {
+  async head(timeoutMs = GIT_TIMEOUT_MS, strict = false): Promise<string | null> {
     const result = await this.gitResult(["rev-parse", "--verify", "HEAD"], undefined, timeoutMs)
-    if (result.code !== 0) return null
+    if (result.code !== 0) {
+      if (strict && !/(not a git repository|Needed a single revision|No such file or directory)/i.test(result.stderr)) {
+        throw commandError(["rev-parse", "--verify", "HEAD"], result)
+      }
+      return null
+    }
     return result.stdout.trim() || null
   }
 
