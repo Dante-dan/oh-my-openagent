@@ -17,6 +17,24 @@ const ULTIMATE_BROWSING_MARKER = "<omo-ultimate-browsing-pointer>"
 
 const SCENARIOS = [
   {
+    name: "session-name-not-command",
+    prompt: "Inspect the session mass-ulw-session-2 and respond briefly.",
+    expectHidden: [],
+    forbidMarkers: [MASS_ULW_MARKER, ULW_PLAN_MARKER, ULW_LOOP_MARKER, ULW_RESEARCH_MARKER, ULTIMATE_BROWSING_MARKER, "<ultrawork-mode>"],
+    expectTranscriptMarkers: [],
+  },
+  {
+    name: "mid-message-command-after-session-name",
+    prompt: "Inspect mass-ulw-session-2, then mass ulw research the gateway options.",
+    expectHidden: [
+      { customType: "omo-mass-ulw:skill-pointer", markers: [MASS_ULW_MARKER, "mass-ulw/SKILL.md"] },
+      { customType: "omo-ulw-research:skill-pointer", markers: [ULW_RESEARCH_MARKER, "ulw-research/SKILL.md"] },
+      { customType: "omo-ultimate-browsing:skill-pointer", markers: [ULTIMATE_BROWSING_MARKER, "ultimate-browsing/SKILL.md"] },
+    ],
+    forbidMarkers: [ULW_PLAN_MARKER, ULW_LOOP_MARKER],
+    expectTranscriptMarkers: ["<ultrawork-mode>"],
+  },
+  {
     name: "overlap-mass-ulw-loop",
     prompt: "mass ulw-loop ship the refactor",
     expectHidden: [
@@ -180,7 +198,7 @@ function runScenario(resolvedSenpi, scenario) {
     if (session.visiblePointerMarkers > 0) failures.push("pointer-rendered-visible")
     if (session.userTexts.some((text) => text.includes("-pointer>"))) failures.push("pointer-leaked-into-user-text")
 
-    return { name: scenario.name, prompt: scenario.prompt, result: failures.length === 0 ? "PASS" : "FAIL", failures }
+    return { name: scenario.name, prompt: scenario.prompt, isolatedAgentDir: sandbox.agentDir, result: failures.length === 0 ? "PASS" : "FAIL", failures }
   } finally {
     rmSync(sandbox.root, { recursive: true, force: true })
   }

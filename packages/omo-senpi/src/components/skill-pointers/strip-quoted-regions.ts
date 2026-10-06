@@ -1,4 +1,9 @@
 const INJECTED_BLOCK = /<(omo-[a-z0-9-]+-pointer|ultrawork-mode|omo-ultrawork-reminder)>[\s\S]*?<\/\1>/gi
+// Preserve typed command aliases anywhere in a request, but ignore longer names
+// containing them. A session identifier is not another invocation of its substring.
+const HYPHENATED_IDENTIFIER = /(?<![\p{L}\p{N}_])[\p{L}\p{N}_]+(?:-+[\p{L}\p{N}_]+)+/gu
+const MASS_TOKEN = /(?:mass-*ulw|ulw-*mass)/i
+const MASS_INVOCATION = /^(?:mass-*ulw|ulw-*mass)(?:-*(?:plan|loop|research))?$/i
 const INLINE_CODE = /(?<!`)(`+)(?!`)[\s\S]*?(?<!`)\1(?!`)/g
 
 // Preserve offsets for the ultrawork /skill: argument check. Non-whitespace masking also prevents
@@ -21,5 +26,7 @@ export function stripQuotedRegions(text: string): string {
     visible = visible.slice(0, opening.index) + mask(visible.slice(opening.index, end)) + visible.slice(end)
     fenceStart.lastIndex = end
   }
-  return visible.replace(INLINE_CODE, mask)
+  return visible.replace(INLINE_CODE, mask).replace(HYPHENATED_IDENTIFIER, (identifier) =>
+    MASS_TOKEN.test(identifier) && !MASS_INVOCATION.test(identifier) ? mask(identifier) : identifier,
+  )
 }

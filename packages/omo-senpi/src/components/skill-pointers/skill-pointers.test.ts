@@ -34,6 +34,16 @@ describe("omo-senpi skill-pointers component", () => {
       }
     })
 
+    it("#given a session identifier containing mass-ulw #when classified #then the identifier is not a command", () => {
+      for (const text of ["resume my-mass-ulw-session", "inspect mass-ulw-session-2", "compare old-ulw-mass-results", "resume mymass-ulw-session"]) {
+        expect(matchedSkillPointerNames(text)).toEqual([])
+      }
+      expect(matchedSkillPointerNames("inspect mass-ulw-session-2, then mass ulw research the failure")).toEqual([
+        "mass-ulw", "ulw-research",
+      ])
+      expect(matchedSkillPointerNames("please run mass-ulw-research now")).toEqual(["mass-ulw", "ulw-research"])
+    })
+
     it("#when given ulw-plan trigger spellings #then ulw-plan matches", () => {
       const triggers = ["ulw plan", "ulw-plan", "ulwplan", "ULW PLAN", "Ulw-Plan", "go ulw plan the migration"] as const
       for (const text of triggers) {

@@ -59,6 +59,18 @@ describe("omo-senpi ultrawork component", () => {
     }
   })
 
+  it("#given a longer hyphenated session name #when input arrives #then its embedded mass-ulw token does not arm", () => {
+    for (const text of ["resume my-mass-ulw-session", "inspect mass-ulw-session-2", "compare old-ulw-mass-results", "resume mymass-ulw-session"]) {
+      expect(isUltraworkInput(text)).toBe(false)
+      expect(classifyUltraworkInput({ text, source: "interactive" }, { wasArmed: false, compactRearmPending: false })).toMatchObject({
+        effective: false, occurrenceCount: 0,
+      })
+    }
+    expect(isUltraworkInput("inspect mass-ulw-session-2, then please ulw investigate")).toBe(true)
+    expect(isUltraworkInput("please run mass-ulw-research now")).toBe(true)
+    expect(isUltraworkInput("please run $mass-ulw now")).toBe(true)
+  })
+
   it("#given overlapping and repeated variants #when classified #then one shipped global pattern determines variants and occurrence count", () => {
     const cases = [
       { text: "ulwultrawork", matchedUlw: false, matchedUltrawork: false, occurrenceCount: 0 },
