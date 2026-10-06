@@ -27,6 +27,7 @@ export interface HostRpcClient {
   steer(message: string): Promise<HostQueuedInputDisposition>
   followUp(message: string): Promise<HostQueuedInputDisposition>
   abort(): Promise<void>
+  setSessionName?(name: string): Promise<void>
   getState(): Promise<RpcSessionState>
   getEntries(since?: string): Promise<RpcEntriesResult>
   switchSession(sessionPath: string): Promise<RpcSwitchSessionResult>

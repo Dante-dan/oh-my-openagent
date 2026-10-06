@@ -53,6 +53,7 @@ export type HostSessionCommand =
   | { readonly type: "steer"; readonly message: string }
   | { readonly type: "followUp"; readonly message: string }
   | { readonly type: "abort" }
+  | { readonly type: "set_session_name"; readonly name: string }
 
 /** Why a child parked itself instead of reattaching. */
 export type HostParkReason = "host_incompatible" | "own_host_unreachable" | "store_index_unavailable"
@@ -199,6 +200,9 @@ export class HostSessionClient {
         return client.steer(command.message).then(ignoreHostDisposition)
       case "followUp":
         return client.followUp(command.message).then(ignoreHostDisposition)
+      case "set_session_name":
+        if (client.setSessionName === undefined) return Promise.reject(new Error("task host engine does not support session naming"))
+        return client.setSessionName(command.name)
       case "abort":
         return client.abort()
       default:

@@ -93,6 +93,7 @@ export function buildManagedSpec(input: {
     : { ...spec.memberEnv, SENPI_TASK_MEMBER_TASK_ID: record.task_id }
   return {
     taskId: record.task_id,
+    sessionName: taskSessionName(record),
     cwd: spec.cwd ?? cwd,
     stateDir: join(stateDir, "children", record.task_id),
     prompt,
@@ -159,6 +160,7 @@ export function buildRespawnManagedSpec(record: TaskRecord, stateDir: string): B
     ok: true,
     spec: {
       taskId: record.task_id,
+      sessionName: taskSessionName(record),
       cwd: spawnSpec.cwd,
       stateDir: join(stateDir, "children", record.task_id),
       prompt: spawnSpec.prompt,
@@ -265,4 +267,9 @@ export function isTerminalRecord(record: TaskRecord): boolean {
     record.status === "interrupted" ||
     record.status === "lost"
   )
+}
+
+function taskSessionName(record: TaskRecord): string {
+  const title = (record.task_summary ?? record.description ?? record.name ?? record.task_id).replace(/\s+/g, " ").trim() || record.task_id
+  return `task: ${title} (parent: ${record.parent_session_id})`
 }

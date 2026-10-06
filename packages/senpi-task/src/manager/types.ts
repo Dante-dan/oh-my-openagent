@@ -36,6 +36,7 @@ export type { ExecutionMode, ExecutionModeGate } from "./execution-mode"
 // needs (task_id, cwd, state_dir, prompt); the in-process adapter also consumes model/tools/agent.
 export type ManagedStartSpec = {
   readonly taskId: string
+  readonly sessionName?: string
   readonly cwd: string
   readonly stateDir: string
   readonly prompt: string
