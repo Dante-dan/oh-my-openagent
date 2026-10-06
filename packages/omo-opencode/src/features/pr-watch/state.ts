@@ -10,6 +10,7 @@ export type PrWatchRegistration = {
   id: string
   reference: string
   sessionID: string
+  directory?: string
   generation: number
   actor: string
   startedAt: number

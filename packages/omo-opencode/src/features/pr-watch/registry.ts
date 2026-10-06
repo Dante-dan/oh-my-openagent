@@ -6,7 +6,7 @@ import { emptyPrWatchState, type PrWatchState } from "./state"
 
 const eventSchema = z.object({ key: z.string(), kind: z.enum(["check_failed", "checks_passed", "comment", "conflict", "stopped"]), fact: z.string() })
 const registrationSchema = z.object({
-  id: z.string(), reference: z.string(), sessionID: z.string(), generation: z.number().int().positive(), actor: z.string(),
+  id: z.string(), reference: z.string(), sessionID: z.string(), directory: z.string().optional(), generation: z.number().int().positive(), actor: z.string(),
   startedAt: z.number(), active: z.boolean(), reason: z.string().optional(), commentOnlyWakes: z.number().int().nonnegative(),
   unreadableSince: z.number().optional(), told: z.array(z.string()),
 })
