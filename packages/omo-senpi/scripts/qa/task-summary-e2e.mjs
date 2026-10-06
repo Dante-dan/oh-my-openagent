@@ -4,7 +4,7 @@
 // on-disk record, the tool-result text, and the widget/footer row rendered from the real record.
 // Usage: node scripts/qa/task-summary-e2e.mjs   (TASK_SUMMARY_E2E_OUT_DIR=<dir> writes a receipt)
 import { spawn } from "node:child_process"
-import { SessionManager } from "@code-yeongyu/senpi"
+import { SessionManager, SessionSelectorComponent, initTheme } from "@code-yeongyu/senpi"
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs"
 import { delimiter, dirname, join, resolve } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
@@ -123,6 +123,22 @@ function readRecords(sandbox) {
   return records
 }
 
+function hostDiagnostics(root) {
+  const lines = []
+  function walk(dir) {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const path = join(dir, entry.name)
+      if (entry.isDirectory()) walk(path)
+      else if (/stderr|host.*log/.test(entry.name)) {
+        const errors = readFileSync(path, "utf8").split("\n").filter((line) => /Error|EPERM|EACCES|failed|not permitted/.test(line)).slice(-15)
+        lines.push(...errors.map((line) => line.replaceAll(root, "<sandbox>").slice(0, 600)))
+      }
+    }
+  }
+  walk(root)
+  return lines
+}
+
 async function run() {
   const senpiBin = findOnPath(process.env.SENPI_BIN?.trim() || "senpi")
   if (senpiBin === null) throw new Error("senpi-binary-unavailable")
@@ -168,14 +184,22 @@ async function run() {
     check("widget-identity-source", rowChecks.length === 2, `records with displayable summaries: ${rowChecks.length}`)
 
     const pickerRows = []
+    const pickerCaptures = []
+    initTheme("dark")
     for (const record of Object.values(records)) {
       const childDir = join(sandboxStateDir(sandbox), "children", record.task_id, "sessions", record.task_id)
       const rows = await SessionManager.list(sandbox.cwd, childDir)
       const row = rows.find((entry) => entry.id === record.child_session_id) ?? (rows.length === 1 ? rows[0] : undefined)
       check(`picker-runner-${record.name}`, record.execution_mode === executionMode && (executionMode === "in-process" || (processRunner === "host" ? record.runner_kind === "host-session" : typeof record.pid === "number")), `mode=${record.execution_mode} kind=${record.runner_kind} pid=${record.pid}`)
-      const expected = `task: ${record.task_summary} (parent: ${record.parent_session_id})`
+      const expected = `task [${record.parent_session_id}]: ${record.task_summary}`
       check(`picker-title-${record.name}`, row?.name === expected, `name=${JSON.stringify(row?.name)} expected=${JSON.stringify(expected)}`)
       check(`picker-messages-${record.name}`, row !== undefined && row.messageCount > 0 && row.firstMessage !== "(no messages)", `messageCount=${row?.messageCount} firstMessage=${JSON.stringify(row?.firstMessage)}`)
+      const selector = new SessionSelectorComponent(async () => rows, async () => rows, () => {}, () => {}, () => {}, () => {}, { showHeader: false })
+      await selector.loadScope("current")
+      const rendered = selector.render(80).join("\n")
+      pickerCaptures.push({ taskId: record.task_id, rendered })
+      check(`picker-visible-parent-${record.name}`, rendered.includes(record.parent_session_id), "actual 80-column picker must show parent identity")
+      check(`picker-visible-title-${record.name}`, rendered.includes(record.task_summary.slice(0, 12)), "actual 80-column picker must show task title")
       pickerRows.push({ taskId: record.task_id, executionMode: record.execution_mode, runnerKind: record.runner_kind, parentSessionId: record.parent_session_id, row, rows })
     }
     check("picker-child-count", pickerRows.length === 2, `actual child rows: ${pickerRows.length}`)
@@ -183,6 +207,8 @@ async function run() {
     const outDir = process.env.TASK_SUMMARY_E2E_OUT_DIR
     if (outDir !== undefined) {
       mkdirSync(outDir, { recursive: true })
+      writeFileSync(join(outDir, "session-picker-render.txt"), pickerCaptures.map((entry) => `${entry.taskId}\n${entry.rendered}`).join("\n"))
+      writeFileSync(join(outDir, "host-diagnostics.json"), JSON.stringify(hostDiagnostics(sandbox.root), null, 2))
       writeFileSync(join(outDir, "session-picker-rows.json"), `${JSON.stringify(pickerRows, null, 2)}\n`)
       writeFileSync(join(outDir, "task-summary-records.json"), `${JSON.stringify(records, null, 2)}\n`)
       writeFileSync(join(outDir, "transcript-tail.txt"), transcript.slice(-6000))

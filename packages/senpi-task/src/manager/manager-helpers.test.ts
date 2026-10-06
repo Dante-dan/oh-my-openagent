@@ -155,7 +155,7 @@ describe("task session display name", () => {
     const spec = spawnSpec({ name: "auditor", task_summary: "Audit\nrecord plumbing" })
     const record = createTaskRecord(buildRecordInput({ spec, plan: PLAN, name: "auditor", executionMode: "in-process", taskSeq: 0 }))
     const managed = buildManagedSpec({ record, spec, plan: PLAN, cwd: "/tmp/project", stateDir: "/tmp/state" })
-    expect(managed.sessionName).toBe("task: Audit record plumbing (parent: session-1)")
+    expect(managed.sessionName).toBe("task [session-1]: Audit record plumbing")
     expect(managed.sessionName).not.toContain(spec.prompt)
   })
 })

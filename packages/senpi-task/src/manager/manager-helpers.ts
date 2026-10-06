@@ -271,5 +271,6 @@ export function isTerminalRecord(record: TaskRecord): boolean {
 
 function taskSessionName(record: TaskRecord): string {
   const title = (record.task_summary ?? record.description ?? record.name ?? record.task_id).replace(/\s+/g, " ").trim() || record.task_id
-  return `task: ${title} (parent: ${record.parent_session_id})`
+  // The picker truncates names from the right; keep the complete parent identity visible.
+  return `task [${record.parent_session_id}]: ${title}`
 }
