@@ -64,6 +64,19 @@ describe("persistent PR watch reactor", () => {
     await reactor.pass(400)
     expect(host.reads).toEqual({ fingerprints: 4, details: 2, activity: 2 })
   })
+  test("a new revision that is already green wakes once even when the previous revision was green", async () => {
+    const store = registry(), host = new Host(), reactor = new PrWatchReactor(store, host)
+    await store.transaction(state => registerPrWatch(state, "acme/widget#1", "one", "alice", 0))
+    await reactor.pass(100)
+    await store.transaction(state => { for (const wake of pendingPrWatchWakes(state)) acknowledgePrWatchWake(state, wake.id) })
+    host.detail.head = "head2"; host.detail.checks[0]!.id = "run:2"; host.status = "status-2"
+    await reactor.pass(200)
+    const wakes = pendingPrWatchWakes(store.read())
+    expect(wakes.length).toBe(1)
+    expect(wakes[0]!.events).toEqual([{ key: "green:head2:2", kind: "checks_passed", fact: "Required checks passed on head2 (all checks are used when GitHub marks none required)." }])
+    await reactor.pass(300)
+    expect(pendingPrWatchWakes(store.read()).length).toBe(1)
+  })
   test("restart retains queued transition and its atomic progress; a durable acknowledgment prevents replay", async () => {
     const store = registry(), host = new Host()
     await store.transaction((state) => registerPrWatch(state, "acme/widget#1", "one", "alice", 0))

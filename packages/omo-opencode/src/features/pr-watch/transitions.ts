@@ -16,7 +16,7 @@ export function prWatchTransitions(previous: PrWatchSnapshot | undefined, curren
         events.push({ key: `failed:${details.head}:${check.id}:${check.conclusion}`, kind: "check_failed", fact: `Check ${check.name} reported ${check.conclusion} on ${details.head}.` })
       }
     }
-    if (checksPassed(current) && (!previous || !checksPassed(previous))) {
+    if (checksPassed(current) && (!previous || details.head !== previous.details?.head || !checksPassed(previous))) {
       events.push({ key: `green:${details.head}:${current.transition}`, kind: "checks_passed", fact: `Required checks passed on ${details.head} (all checks are used when GitHub marks none required).` })
     }
     if (details.mergeable === "CONFLICTING" && previous?.details?.mergeable !== "CONFLICTING") {
