@@ -358,7 +358,7 @@ test("#given a task session title #when a process child starts #then naming prec
       if (child.stdin === null) throw new Error("missing RPC input")
       const input = child.stdin
       const original = input.write.bind(input)
-      spyOn(input, "write").mockImplementation((chunk, encodingOrCallback, callback) => {
+      spyOn(input, "write").mockImplementation((chunk: string | Uint8Array, encodingOrCallback?: BufferEncoding | ((error?: Error | null) => void), callback?: (error?: Error | null) => void) => {
         const command = JSON.parse(String(chunk))
         commands.push(command.type)
         return typeof encodingOrCallback === "string" ? original(chunk, encodingOrCallback, callback) : original(chunk, encodingOrCallback)
