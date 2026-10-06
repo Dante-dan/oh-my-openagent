@@ -59,7 +59,7 @@ describe("shared GitHub PR watch transport", () => {
     expect(fixture.calls.length).toBe(1)
     now = 3000; await transport.graphql("query"); expect(fixture.calls.length).toBe(2)
   })
-  test("ordinary permissions and malformed JSON fail safely without a false rate-limit wait", async () => {
+  test("ordinary permissions fail safely without a false rate-limit wait", async () => {
     const fixture = replay('{"status":403,"body":{"message":"private token-secret"}}\n{"status":200,"body":{}}')
     const transport = new GitHubReadTransport({ env: { GH_TOKEN: "token-secret" }, fetch: fixture.request })
     await expect(transport.rest("/user")).rejects.toThrow("GitHub read failed (403)")

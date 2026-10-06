@@ -83,8 +83,20 @@ export class GitHubReadTransport {
     if (response.headers.has("x-ratelimit-remaining") && Number.isFinite(remaining) && Number.isFinite(resetAt)) this.#budgets.set(resource, { remaining, resetAt, cost: 1 })
     if (response.status === 304 && cached) return structuredClone(cached.value) as T
     // Do not echo raw response bodies: they may contain private repository data or credentials.
-    const text = await response.text()
-    if (text.length > 8 * 1024 * 1024) throw new Error("GitHub response exceeds read limit")
+    const reader = response.body?.getReader(), decoder = new TextDecoder()
+    let text = "", bytes = 0
+    if (reader) {
+      try {
+        for (;;) {
+          const chunk = await reader.read()
+          if (chunk.done) break
+          bytes += chunk.value.byteLength
+          if (bytes > 8 * 1024 * 1024) { await reader.cancel(); throw new Error("GitHub response exceeds read limit") }
+          text += decoder.decode(chunk.value, { stream: true })
+        }
+        text += decoder.decode()
+      } finally { reader.releaseLock() }
+    }
     let value: unknown
     try { value = JSON.parse(text) } catch { throw new Error(`GitHub returned unreadable JSON (${response.status})`) }
     const object = value && typeof value === "object" ? value as Record<string, unknown> : {}
