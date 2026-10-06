@@ -4,6 +4,7 @@
 // on-disk record, the tool-result text, and the widget/footer row rendered from the real record.
 // Usage: node scripts/qa/task-summary-e2e.mjs   (TASK_SUMMARY_E2E_OUT_DIR=<dir> writes a receipt)
 import { spawn } from "node:child_process"
+import { SessionManager } from "@code-yeongyu/senpi"
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs"
 import { delimiter, dirname, join, resolve } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
@@ -17,7 +18,13 @@ const mockProviderEntry = join(scriptDir, "task-e2e-mock-provider.ts")
 const SUMMARY = "Audit auth session flow"
 const OVER_LIMIT_MARKER = "audit auth session flow and the surrounding token refresh pipeline for regressions across the relay"
 
+const executionMode = process.env.TASK_SUMMARY_E2E_EXECUTION_MODE ?? "in-process"
+const processRunner = process.env.TASK_SUMMARY_E2E_PROCESS_RUNNER ?? "child-process"
+if (!["in-process", "process"].includes(executionMode)) throw new Error("invalid task-summary execution mode")
+if (!["child-process", "host"].includes(processRunner)) throw new Error("invalid task-summary process runner")
+
 const OMO_CONFIG = {
+  task: { default_execution_mode: executionMode, process_runner: processRunner },
   categories: {
     mockcat: { description: "Local mock category pinned to the mock provider.", model: "omo-mock/mock-1" },
   },
@@ -159,9 +166,23 @@ async function run() {
       .map((record) => `${record.task_summary} beats ${record.name ?? record.task_id}`)
     check("widget-identity-source", rowChecks.length === 2, `records with displayable summaries: ${rowChecks.length}`)
 
+    const pickerRows = []
+    for (const record of Object.values(records)) {
+      const childDir = join(sandboxStateDir(sandbox), "children", record.task_id, "sessions", record.task_id)
+      const rows = await SessionManager.list(sandbox.cwd, childDir)
+      const row = rows.find((entry) => entry.id === record.child_session_id)
+      check(`picker-runner-${record.name}`, record.execution_mode === executionMode && (executionMode === "in-process" || (processRunner === "host" ? record.runner_kind === "host-session" : typeof record.pid === "number")), `mode=${record.execution_mode} kind=${record.runner_kind} pid=${record.pid}`)
+      const expected = `task: ${record.task_summary} (parent: ${record.parent_session_id})`
+      check(`picker-title-${record.name}`, row?.name === expected, `name=${JSON.stringify(row?.name)} expected=${JSON.stringify(expected)}`)
+      check(`picker-messages-${record.name}`, row !== undefined && row.messageCount > 0 && row.firstMessage !== "(no messages)", `messageCount=${row?.messageCount} firstMessage=${JSON.stringify(row?.firstMessage)}`)
+      pickerRows.push({ taskId: record.task_id, executionMode: record.execution_mode, runnerKind: record.runner_kind, parentSessionId: record.parent_session_id, row })
+    }
+    check("picker-child-count", pickerRows.length === 2, `actual child rows: ${pickerRows.length}`)
+
     const outDir = process.env.TASK_SUMMARY_E2E_OUT_DIR
     if (outDir !== undefined) {
       mkdirSync(outDir, { recursive: true })
+      writeFileSync(join(outDir, "session-picker-rows.json"), `${JSON.stringify(pickerRows, null, 2)}\n`)
       writeFileSync(join(outDir, "task-summary-records.json"), `${JSON.stringify(records, null, 2)}\n`)
       writeFileSync(join(outDir, "transcript-tail.txt"), transcript.slice(-6000))
     }
