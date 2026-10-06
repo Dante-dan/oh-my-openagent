@@ -34,6 +34,24 @@ describe("shared GitHub PR watch transport", () => {
     expect(fixture.calls.map(call => call.url)).toEqual(["https://git.example.com/api/v3/user", "https://git.example.com/api/graphql"])
     expect(fixture.calls.every(call => call.headers.get("authorization") === "Bearer enterprise")).toBe(true)
   })
+  test("dedicated Enterprise Cloud uses its API subdomain and cloud-token precedence", async () => {
+    const fixture = replay('{"status":200,"body":{}}\n{"status":200,"body":{}}')
+    const transport = new GitHubReadTransport({ host: "acme.ghe.com", env: { GH_TOKEN: "cloud", GH_ENTERPRISE_TOKEN: "server-only" }, fetch: fixture.request })
+    await transport.rest("/user"); await transport.graphql("query { viewer { login } }")
+    expect(fixture.calls.map(call => call.url)).toEqual(["https://api.acme.ghe.com/user", "https://api.acme.ghe.com/graphql"])
+    expect(fixture.calls.every(call => call.headers.get("authorization") === "Bearer cloud")).toBe(true)
+  })
+  test("host credential cache expires after five minutes and invalidates immediately on 401", async () => {
+    let now = 0, authentications = 0
+    const fixture = replay('{"status":200,"body":{}}\n{"status":200,"body":{}}\n{"status":401,"body":{"message":"Bad credentials"}}\n{"status":200,"body":{}}\n{"status":200,"body":{}}')
+    const transport = new GitHubReadTransport({ env: {}, fetch: fixture.request, now: () => now, authToken: async () => `token-${++authentications}` })
+    await transport.rest("/user"); now = 299999; await transport.rest("/user")
+    expect(authentications).toBe(1)
+    await expect(transport.rest("/user")).rejects.toThrow("GitHub read failed (401)")
+    await transport.rest("/user"); expect(authentications).toBe(2)
+    now += 300000; await transport.rest("/user"); expect(authentications).toBe(3)
+    expect(fixture.calls.map(call => call.headers.get("authorization"))).toEqual(["Bearer token-1", "Bearer token-1", "Bearer token-1", "Bearer token-2", "Bearer token-3"])
+  })
   test("conditional REST read returns isolated cached JSON on 304", async () => {
     const fixture = replay('{"status":200,"headers":{"etag":"cached"},"body":{"login":"alice"}}\n{"status":304}')
     const transport = new GitHubReadTransport({ env: { GITHUB_TOKEN: "token" }, fetch: fixture.request })

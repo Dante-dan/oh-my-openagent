@@ -23,6 +23,7 @@ function cliToken(host: string): Promise<string> {
 export class GitHubReadTransport {
   readonly host: string
   readonly #base: string
+  readonly #cloud: boolean
   readonly #env: NodeJS.ProcessEnv
   readonly #fetch: typeof fetch
   readonly #now: () => number
@@ -30,6 +31,7 @@ export class GitHubReadTransport {
   readonly #budgets = new Map<string, Budget>()
   readonly #cache = new Map<string, CachedResponse>()
   #token?: Promise<string>
+  #tokenExpiresAt = 0
   #deferredUntil = 0
   #queue: Promise<unknown> = Promise.resolve()
 
@@ -37,7 +39,8 @@ export class GitHubReadTransport {
     this.#env = options.env ?? process.env
     this.host = options.host ?? this.#env.GH_HOST ?? "github.com"
     if (!/^[a-zA-Z0-9.-]+(?::[0-9]+)?$/.test(this.host)) throw new Error("Invalid GitHub host")
-    this.#base = this.host === "github.com" ? "https://api.github.com" : `https://${this.host}/api`
+    this.#cloud = this.host === "github.com" || this.host.endsWith(".ghe.com")
+    this.#base = this.host === "github.com" ? "https://api.github.com" : this.#cloud ? `https://api.${this.host}` : `https://${this.host}/api`
     this.#fetch = options.fetch ?? fetch
     this.#now = options.now ?? Date.now
     this.#authToken = options.authToken ?? cliToken
@@ -45,7 +48,7 @@ export class GitHubReadTransport {
 
   async rest<T>(path: string): Promise<T> {
     if (!/^\/[a-zA-Z0-9_/?=&.%-]+$/.test(path) || path.includes("..") || path.startsWith("//")) throw new Error("Invalid GitHub REST path")
-    const prefix = this.host === "github.com" ? "" : "/v3"
+    const prefix = this.#cloud ? "" : "/v3"
     return this.#enqueue(() => this.#request<T>(`${this.#base}${prefix}${path}`, "core"))
   }
 
@@ -63,13 +66,16 @@ export class GitHubReadTransport {
     const now = this.#now(), budget = this.#budgets.get(resource)
     if (this.#deferredUntil > now) throw new GitHubReadDeferred(this.#deferredUntil)
     if (budget && budget.remaining < Math.max(1, budget.cost) && budget.resetAt > now) throw new GitHubReadDeferred(budget.resetAt)
-    if (!this.#token) {
-      const token = this.host === "github.com"
+    if (!this.#token || this.#tokenExpiresAt <= now) {
+      // Do not reuse conditional-response bodies across credential refreshes.
+      this.#cache.clear()
+      this.#tokenExpiresAt = now + 5 * 60_000
+      const token = this.#cloud
         ? this.#env.GH_TOKEN?.trim() || this.#env.GITHUB_TOKEN?.trim()
         : this.#env.GH_ENTERPRISE_TOKEN?.trim() || this.#env.GITHUB_ENTERPRISE_TOKEN?.trim()
       this.#token = token ? Promise.resolve(token) : this.#authToken(this.host)
       // An unavailable credential may be repaired while the server remains alive.
-      void this.#token.catch(() => { this.#token = undefined })
+      void this.#token.catch(() => { this.#token = undefined; this.#tokenExpiresAt = 0 })
     }
     const headers = new Headers({ Accept: "application/vnd.github+json", Authorization: `Bearer ${await this.#token}`, "X-GitHub-Api-Version": "2022-11-28" })
     const cached = query === undefined ? this.#cache.get(url) : undefined
@@ -79,6 +85,11 @@ export class GitHubReadTransport {
     try {
       response = await this.#fetch(url, { method: query === undefined ? "GET" : "POST", headers, body: query === undefined ? undefined : JSON.stringify({ query }), signal: AbortSignal.timeout(30_000), redirect: "error" })
     } catch { throw new Error("GitHub transport read failed") }
+    if (response.status === 401) {
+      this.#token = undefined
+      this.#tokenExpiresAt = 0
+      this.#cache.clear()
+    }
     const remaining = Number(response.headers.get("x-ratelimit-remaining")), resetAt = Number(response.headers.get("x-ratelimit-reset")) * 1000
     if (response.headers.has("x-ratelimit-remaining") && Number.isFinite(remaining) && Number.isFinite(resetAt)) this.#budgets.set(resource, { remaining, resetAt, cost: 1 })
     if (response.status === 304 && cached) return structuredClone(cached.value) as T
