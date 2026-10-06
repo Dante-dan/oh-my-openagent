@@ -1,4 +1,3 @@
-import { execFile } from "node:child_process"
 import { join } from "node:path"
 import type { PluginInput } from "@opencode-ai/plugin"
 import { dispatchInternalPrompt, isInternalPromptDispatchAccepted } from "../../shared/prompt-async-gate"
@@ -10,6 +9,7 @@ import { acknowledgePrWatchWake, pendingPrWatchWakes, registerPrWatch, stopPrWat
 
 export class PrWatchManager {
   readonly registry: PrWatchRegistry
+  private readonly host = new GitHubPrWatchHost()
   private readonly reactor: PrWatchReactor
   private timer?: ReturnType<typeof setTimeout>
   private stopped = false
@@ -17,16 +17,14 @@ export class PrWatchManager {
 
   constructor(private readonly ctx: Pick<PluginInput, "client" | "directory">) {
     this.registry = new PrWatchRegistry(join(ctx.directory, ".omo", "pr-watches.json"))
-    this.reactor = new PrWatchReactor(this.registry, new GitHubPrWatchHost())
+    this.reactor = new PrWatchReactor(this.registry, this.host)
     // Existing durable registrations resume on host boot, independent of tool calls.
     const state = this.registry.read()
     if (Object.values(state.registrations).some((row) => row.active) || pendingPrWatchWakes(state).length) this.schedule(0)
   }
 
   async watch(reference: string, sessionID: string): Promise<PrWatchRegistration> {
-    const actor = await new Promise<string>((resolve, reject) => {
-      execFile("gh", ["api", "user", "--jq", ".login"], { encoding: "utf8" }, (error, stdout) => error ? reject(new Error("Cannot identify authenticated GitHub actor")) : resolve(stdout.trim()))
-    })
+    const actor = await this.host.actor()
     const registration = await this.registry.transaction((state) => registerPrWatch(state, reference, sessionID, actor))
     this.schedule(0)
     return registration

@@ -4,6 +4,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { GitHubPrWatchHost, type PrActivity, type PrDetails } from "./github"
 import type { FingerprintBaseline, FingerprintRow } from "./fingerprints.mjs"
+import { GitHubReadDeferred } from "./transport"
 import { PrWatchRegistry } from "./registry"
 import { PrWatchReactor } from "./reactor"
 import { acknowledgePrWatchWake, pendingPrWatchWakes, recordPrWatchEvents, registerPrWatch, stopPrWatch } from "./state"
@@ -22,6 +23,7 @@ class Host extends GitHubPrWatchHost {
   rateLimited = false
   missing = false
   fail = false
+  deferred = false
   gate?: Promise<void>
   detail: PrDetails = { state: "OPEN", mergeable: "MERGEABLE", head: "head1", checks: [{ id: "run:1", name: "CI", status: "COMPLETED", conclusion: "SUCCESS", required: true }] }
   remarksData: PrActivity = { remarks: [] }
@@ -36,6 +38,7 @@ class Host extends GitHubPrWatchHost {
   async details(): Promise<PrDetails> {
     this.reads.details++
     await this.gate
+    if (this.deferred) throw new GitHubReadDeferred(5000)
     if (this.fail) throw new Error("Host unreadable")
     return structuredClone(this.detail)
   }
@@ -95,6 +98,16 @@ describe("persistent PR watch reactor", () => {
     const state = new PrWatchRegistry(store.path).read()
     expect(state.registrations[registration.id]!.reason).toBe("host_unreadable_fifteen_minutes")
     expect(pendingPrWatchWakes(state)[0]!.events[0]!.fact).toContain("Host unreadable")
+  })
+  test("deferred GitHub reads preserve acknowledged baseline and do not start unreadability timeout", async () => {
+    const store = registry(), host = new Host(), reactor = new PrWatchReactor(store, host)
+    const registration = await store.transaction(state => registerPrWatch(state, "acme/widget#1", "one", "alice", 0))
+    await reactor.pass(100)
+    const baseline = store.read().snapshots[registration.reference]
+    host.status = "changed"; host.deferred = true
+    await reactor.pass(200)
+    expect(store.read().snapshots[registration.reference]).toEqual(baseline)
+    expect(store.read().registrations[registration.id]!.unreadableSince).toBeUndefined()
   })
   test("ten consecutive comment-only wakes stop with reason, and actor comments do not generate a wake", async () => {
     const store = registry(), host = new Host()

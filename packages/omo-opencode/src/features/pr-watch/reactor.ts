@@ -1,3 +1,4 @@
+import { GitHubReadDeferred } from "./transport"
 import { GitHubPrWatchHost } from "./github"
 import { PrWatchRegistry } from "./registry"
 import { recordPrWatchEvents, recordPrWatchReadFailure, stopPrWatch, type PrWatchSnapshot } from "./state"
@@ -15,6 +16,7 @@ export class PrWatchReactor {
     try {
       fingerprints = await this.host.fingerprints(references, before.snapshots, now)
     } catch (error) {
+      if (error instanceof GitHubReadDeferred) return
       await this.registry.transaction((state) => {
         for (const registration of captured) recordPrWatchReadFailure(state, registration, now, error instanceof Error ? error.message : "unreadable fingerprint")
       })
@@ -51,6 +53,7 @@ export class PrWatchReactor {
           }
         })
       } catch (error) {
+        if (error instanceof GitHubReadDeferred) return
         await this.registry.transaction((state) => {
           for (const registration of captured.filter((registration) => registration.reference === reference)) {
             recordPrWatchReadFailure(state, registration, now, error instanceof Error ? error.message : "unreadable PR data")
