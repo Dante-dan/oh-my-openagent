@@ -1,3 +1,5 @@
+import { createOpencodeClient } from "@opencode-ai/sdk"
+import { acquirePrWatchManager } from "./manager"
 import { afterEach, describe, expect, test } from "bun:test"
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -127,4 +129,23 @@ describe("persistent PR watch reactor", () => {
     writeFileSync(store.path, '{"version":999}')
     expect(() => store.read()).toThrow()
   })
+})
+
+
+test("project plugin instances share host registry/poller until the last owner releases", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "pr-watch-host-")); directories.push(dir)
+  process.env.XDG_DATA_HOME = dir
+  const client = createOpencodeClient({ baseUrl: "http://127.0.0.1:1" })
+  const one = acquirePrWatchManager({ client, directory: join(dir, "project-one") })
+  const two = acquirePrWatchManager({ client, directory: join(dir, "project-two") })
+  expect(two).toBe(one)
+  expect(one.registry.path.startsWith(dir)).toBe(true)
+  await one.shutdown()
+  const three = acquirePrWatchManager({ client, directory: join(dir, "project-three") })
+  expect(three).toBe(two)
+  await two.shutdown(); await three.shutdown()
+  const restarted = acquirePrWatchManager({ client, directory: join(dir, "project-one") })
+  expect(restarted).not.toBe(one)
+  expect(restarted.registry.path).toBe(one.registry.path)
+  await restarted.shutdown()
 })

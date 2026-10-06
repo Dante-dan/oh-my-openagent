@@ -68,6 +68,16 @@ const server = http.createServer(async (req, res) => {
     return
   }
 
+  // Persistent PR-watch QA drives the real tool boundary through the existing fake model.
+  if (inputStr.includes("PR_WATCH_QA_REGISTER:") && !inputStr.includes('function_call_output')) {
+    sendSse(res, toolCallEvents(callCount, "watch_pull_request", `call_watch_${callCount}`, { reference: /PR_WATCH_QA_REGISTER:([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+#[1-9][0-9]*)/.exec(inputStr)?.[1] }))
+    return
+  }
+  if (inputStr.includes("PR_WATCH_QA_LIST") && !inputStr.includes('function_call_output')) {
+    sendSse(res, toolCallEvents(callCount, "list_pull_request_watches", `call_list_${callCount}`, {}))
+    return
+  }
+
   if (branch === "parent-tool-call") {
     latches.parentToolCallIssued = true
     sendSse(res, toolCallEvents(callCount, "task", `call_agent_${callCount}`, {
