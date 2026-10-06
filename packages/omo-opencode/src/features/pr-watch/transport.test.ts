@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import { GitHubPrWatchHost } from "./github"
 import { GitHubReadDeferred, GitHubReadTransport } from "./transport"
 
 function replay(lines: string) {
@@ -65,5 +66,34 @@ describe("shared GitHub PR watch transport", () => {
     await expect(transport.rest("/user")).rejects.toThrow("GitHub read failed (403)")
     await transport.graphql("query"); expect(fixture.calls.length).toBe(2)
     await expect(transport.rest("//evil.example/user")).rejects.toThrow("Invalid GitHub REST path")
+  })
+})
+
+
+// The persistent consumer must not acknowledge truncated pages (#9493).
+describe("complete PR watch reads", () => {
+  const context = (head: string, hasNextPage: boolean, endCursor: string | null, id: number) => ({ data: { repository: { pullRequest: {
+    state: "OPEN", mergeable: "MERGEABLE", headRefOid: head,
+    commits: { nodes: [{ commit: { statusCheckRollup: { contexts: { pageInfo: { hasNextPage, endCursor }, nodes: [{ databaseId: id, name: "CI", status: "COMPLETED", conclusion: "SUCCESS", isRequired: true }] } } } }] },
+  } } } })
+  const transport = (fixture: ReturnType<typeof replay>) => new GitHubReadTransport({ env: { GH_TOKEN: "fixture" }, fetch: fixture.request })
+  test("continues check context cursors and rejects a moving head", async () => {
+    const fixture = replay([context("one", true, "cursor", 1), context("one", false, null, 2)].map(body => JSON.stringify({ status: 200, body })).join("\n"))
+    expect((await new GitHubPrWatchHost(transport(fixture)).details("acme/widget#1")).checks.map(check => check.id)).toEqual(["run:1", "run:2"])
+    expect((fixture.calls[1].body as { query: string }).query).toContain('after:"cursor"')
+    const moved = replay([context("one", true, "cursor", 1), context("two", false, null, 2)].map(body => JSON.stringify({ status: 200, body })).join("\n"))
+    await expect(new GitHubPrWatchHost(transport(moved)).details("acme/widget#1")).rejects.toThrow("head changed")
+  })
+  test("collects all REST comment pages and GraphQL review pages including inline replies", async () => {
+    const remark = (id: number) => ({ node_id: `comment-${id}`, user: { login: "alice" }, updated_at: "2026-10-07", html_url: `https://example.test/${id}` })
+    const reviews = (id: string, next: string | null) => ({ data: { repository: { pullRequest: { reviews: { nodes: [{ id, author: { login: "alice" }, updatedAt: "2026-10-07", url: "https://example.test/review" }], pageInfo: { hasNextPage: next !== null, endCursor: next } } } } } })
+    const fixture = replay([Array.from({ length: 100 }, (_, i) => remark(i)), [remark(100)], [remark(101)], reviews("r1", "more"), reviews("r2", null)].map(body => JSON.stringify({ status: 200, body })).join("\n"))
+    const result = await new GitHubPrWatchHost(transport(fixture)).activity("acme/widget#1")
+    expect(result.remarks.length).toBe(104)
+    expect(result.remarks.some(row => row.id === "comment-101")).toBe(true)
+    expect(fixture.calls[1].url).toContain("page=2")
+    expect(fixture.calls[2].url).toContain("/pulls/1/comments")
+    const failed = replay([{ status: 200, body: Array.from({ length: 100 }, (_, i) => remark(i)) }, { status: 500, body: {} }].map(row => JSON.stringify(row)).join("\n"))
+    await expect(new GitHubPrWatchHost(transport(failed)).activity("acme/widget#1")).rejects.toThrow("GitHub read failed")
   })
 })
