@@ -1,8 +1,9 @@
 import { describe, expect, test } from "bun:test"
-import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { tmpdir } from "node:os"
 import { execFileSync } from "node:child_process"
+import { writeTestExecutable } from "./omob-test-executable"
 import { buildBatches, decodeBatch, parsePullRequest, runCli } from "../.agents/skills/work-with-pr/scripts/pr-watch-fingerprints.mjs"
 
 const NOW = 2_000_000
@@ -32,10 +33,10 @@ describe("batched PR watch fingerprint protocol", () => {
     // Exercise the executable boundary instead of adding a test-only fetch injection seam.
     const dir = mkdtempSync(join(tmpdir(), "pr-fingerprint-cli-"))
     const log = join(dir, "reads.jsonl")
-    const gh = join(dir, "gh")
+    const gh = join(dir, process.platform === "win32" ? "gh.exe" : "gh")
     try {
-      writeFileSync(gh, `#!${process.execPath}
-import { appendFileSync } from "node:fs";
+      // Windows requires a native executable; a POSIX shebang fixture is not runnable there.
+      writeTestExecutable(gh, `const { appendFileSync } = require("node:fs");
 const args = process.argv.slice(2);
 appendFileSync(process.env.PR_FINGERPRINT_READ_LOG, JSON.stringify(args) + "\\n");
 const query = args[3];
@@ -45,7 +46,6 @@ for (const [, alias] of query.matchAll(/(pr[0-9]+): repository/g)) {
 }
 process.stdout.write(JSON.stringify({ data }));
 `)
-      chmodSync(gh, 0o700)
       const output = execFileSync(process.execPath, [
         "./.agents/skills/work-with-pr/scripts/pr-watch-fingerprints.mjs",
         ...Array.from({ length: 26 }, (_, i) => `acme/widget#${i + 1}`),
@@ -57,7 +57,7 @@ process.stdout.write(JSON.stringify({ data }));
       expect(rows.length).toBe(26)
       expect(rows.every((row) => row.result === "ok" && row.refreshStatus && row.refreshRemarks && row.lastRemarksReadAt === null)).toBe(true)
     } finally { rmSync(dir, { recursive: true, force: true }) }
-  })
+  }, 60_000)
   test("bounds each GraphQL pass to 25 distinct PRs and validates user input", () => {
     const batches = buildBatches([...Array.from({ length: 26 }, (_, i) => `acme/widget#${i + 1}`), "acme/widget#1"])
     expect(batches.map(({ refs }) => refs.length)).toEqual([25, 1])
