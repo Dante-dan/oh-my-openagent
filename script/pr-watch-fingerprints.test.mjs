@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
-import { join } from "node:path"
+import { delimiter, join } from "node:path"
 import { tmpdir } from "node:os"
 import { execFileSync } from "node:child_process"
 import { writeTestExecutable } from "./omob-test-executable"
@@ -49,7 +49,7 @@ process.stdout.write(JSON.stringify({ data }));
       const output = execFileSync(process.execPath, [
         "./.agents/skills/work-with-pr/scripts/pr-watch-fingerprints.mjs",
         ...Array.from({ length: 26 }, (_, i) => `acme/widget#${i + 1}`),
-      ], { encoding: "utf8", env: { ...process.env, PATH: `${dir}:${process.env.PATH}`, PR_FINGERPRINT_READ_LOG: log } })
+      ], { encoding: "utf8", env: { ...process.env, PATH: `${dir}${delimiter}${process.env.PATH}`, PR_FINGERPRINT_READ_LOG: log } })
       const reads = readFileSync(log, "utf8").trim().split("\n").map((line) => JSON.parse(line))
       expect(reads.length).toBe(2)
       expect(reads.every((args) => args[0] === "api" && args[1] === "graphql")).toBe(true)
