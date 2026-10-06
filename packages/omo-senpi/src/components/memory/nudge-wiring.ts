@@ -1,6 +1,7 @@
 import type { EntryRenderer } from "@code-yeongyu/senpi"
 import type { GitMemoryRepo, MemoryToolProvenance } from "@oh-my-opencode/memory-core"
 
+import type { ComponentLogger } from "../../extension/types"
 import type { MemoryExtensionAPI } from "./capabilities"
 import type { MemoryIdentityContext } from "./context"
 import {
@@ -15,6 +16,9 @@ export interface AcceptedTurnsRecord {
   readonly sessionId: string
   readonly priorUserTurns: number
   readonly sessionBaselineTurns: number
+  readonly checkedHead?: string
+  readonly savedAtTurn?: number
+  readonly historySince?: string
 }
 
 export interface ResolvedNudgeSettings {
@@ -23,6 +27,7 @@ export interface ResolvedNudgeSettings {
 }
 
 export interface MemoryNudgeWiringOptions {
+  readonly logger?: ComponentLogger
   readonly resolveContext: (sessionId: string) => MemoryIdentityContext | undefined
   readonly resolveSettings: (identity: string) => ResolvedNudgeSettings
 }
@@ -59,6 +64,10 @@ export const renderAcceptedTurnsEntry: EntryRenderer<AcceptedTurnsRecord> = (ent
 export function createMemoryNudgeWiring(options: MemoryNudgeWiringOptions): MemoryNudgeWiring {
   const sessions = new Map<string, AcceptedTurnsRecord>()
   const pendingInputs = new Map<string, string>()
+  const checks = new Map<string, Promise<number | undefined>>()
+  const failedUntil = new Map<string, number>()
+  const maintenance = new Map<string, Promise<unknown>>()
+  let registered: MemoryExtensionAPI | undefined
 
   function persist(pi: MemoryExtensionAPI, record: AcceptedTurnsRecord): void {
     sessions.set(record.sessionId, record)
@@ -67,12 +76,13 @@ export function createMemoryNudgeWiring(options: MemoryNudgeWiringOptions): Memo
 
   return {
     register(pi): void {
+      registered = pi
       pi.on("session_start", (_payload, eventCtx) => {
         const session = readSession(eventCtx)
         if (session === undefined) return
         const hydrated = findLatestAcceptedTurns(session.entries, session.id)
         if (hydrated !== undefined) {
-          sessions.set(session.id, hydrated)
+          sessions.set(session.id, { ...hydrated, historySince: hydrated.historySince ?? session.since })
           return
         }
         sessions.set(session.id, {
@@ -80,6 +90,7 @@ export function createMemoryNudgeWiring(options: MemoryNudgeWiringOptions): Memo
           sessionId: session.id,
           priorUserTurns: 0,
           sessionBaselineTurns: 0,
+          historySince: session.since ?? new Date(Date.now() - 1_000).toISOString(),
         })
       })
 
@@ -132,23 +143,47 @@ export function createMemoryNudgeWiring(options: MemoryNudgeWiringOptions): Memo
       if (state === undefined) return undefined
       const settings = options.resolveSettings(identity)
       if (!settings.enabled) return undefined
-      // Ask git for the commits that carry both trailers instead of reading the whole history and
-      // filtering here: a long-lived identity has thousands of commits and this runs on every prompt.
-      // The predicate below still decides, so a prefix collision in the grep cannot widen the answer.
-      const history = await repo.head() === null
-        ? []
-        : await repo.log({ grep: [`Omo-Writer: memory-tool`, `Omo-Session: ${sessionId}`] })
-      const lastSave = history.find((commit) =>
-        commit.trailers["Omo-Writer"] === "memory-tool"
-        && commit.trailers["Omo-Session"] === sessionId
-        && parseTurn(commit.trailers["Omo-Turn"]) !== undefined
-      )
-      const savedAt = lastSave === undefined
-        ? state.sessionBaselineTurns
-        : parseTurn(lastSave.trailers["Omo-Turn"]) ?? state.sessionBaselineTurns
-      const pendingTurn = [...pendingInputs.values()].some((pendingSessionId) => pendingSessionId === sessionId) ? 1 : 0
-      const turns = state.priorUserTurns + pendingTurn - savedAt
-      return turns >= settings.everyUserTurns ? turns : undefined
+      if ((failedUntil.get(sessionId) ?? 0) > Date.now()) return undefined
+      const existing = checks.get(sessionId)
+      if (existing !== undefined) return existing
+      if (!maintenance.has(repo.dir)) {
+        const task = repo.maintain().catch((error: unknown) => {
+          options.logger?.warn("omo-senpi memory maintenance failed", { error: describe(error) })
+        }).finally(() => maintenance.delete(repo.dir))
+        maintenance.set(repo.dir, task)
+      }
+      const check = (async () => {
+        try {
+          const head = await repo.head(500)
+          let savedAt = state.savedAtTurn ?? state.sessionBaselineTurns
+          if (head !== null && head !== state.checkedHead) {
+            const history = await repo.log({
+              // Exact trailer lines prevent a session-id prefix from hiding the latest real save.
+              grepRegex: ["^Omo-Writer: memory-tool$", `^Omo-Session: ${escapeRegex(sessionId)}$`, "^Omo-Turn: [0-9]+$"],
+              limit: 1,
+              range: state.checkedHead === undefined ? head : `${state.checkedHead}..${head}`,
+              ...(state.historySince === undefined ? {} : { since: state.historySince }),
+              timeoutMs: 500,
+            })
+            const lastSave = history.find((commit) => commit.trailers["Omo-Writer"] === "memory-tool"
+              && commit.trailers["Omo-Session"] === sessionId)
+            savedAt = parseTurn(lastSave?.trailers["Omo-Turn"]) ?? savedAt
+            const current = sessions.get(sessionId) ?? state
+            const next = { ...current, checkedHead: head, savedAtTurn: savedAt }
+            if (registered !== undefined) persist(registered, next)
+          }
+          const current = sessions.get(sessionId) ?? state
+          const pendingTurn = [...pendingInputs.values()].some((id) => id === sessionId) ? 1 : 0
+          const turns = current.priorUserTurns + pendingTurn - savedAt
+          return turns >= settings.everyUserTurns ? turns : undefined
+        } catch (error) {
+          failedUntil.set(sessionId, Date.now() + 30_000)
+          options.logger?.warn("omo-senpi memory nudge check failed", { error: describe(error) })
+          return undefined
+        }
+      })().finally(() => checks.delete(sessionId))
+      checks.set(sessionId, check)
+      return check
     },
 
     provenance(sessionId): MemoryToolProvenance | undefined {
@@ -177,9 +212,12 @@ function isAcceptedTurnsRecord(value: unknown): value is AcceptedTurnsRecord {
     && isTurn(value.priorUserTurns)
     && isTurn(value.sessionBaselineTurns)
     && value.sessionBaselineTurns <= value.priorUserTurns
+    && (value.checkedHead === undefined || (typeof value.checkedHead === "string" && /^[0-9a-f]{40,64}$/.test(value.checkedHead)))
+    && (value.savedAtTurn === undefined || isTurn(value.savedAtTurn))
+    && (value.historySince === undefined || (typeof value.historySince === "string" && Number.isFinite(Date.parse(value.historySince))))
 }
 
-function readSession(eventCtx: unknown): { id: string; entries: readonly unknown[] } | undefined {
+function readSession(eventCtx: unknown): { id: string; entries: readonly unknown[]; since?: string } | undefined {
   if (!isRecord(eventCtx) || !isRecord(eventCtx.sessionManager)) return undefined
   const manager = eventCtx.sessionManager
   const getSessionId = manager.getSessionId
@@ -187,7 +225,11 @@ function readSession(eventCtx: unknown): { id: string; entries: readonly unknown
   if (typeof getSessionId !== "function" || typeof getEntries !== "function") return undefined
   const id = Reflect.apply(getSessionId, manager, [])
   const entries = Reflect.apply(getEntries, manager, [])
-  return typeof id === "string" && id.length > 0 && Array.isArray(entries) ? { id, entries } : undefined
+  if (typeof id !== "string" || id.length === 0 || !Array.isArray(entries)) return undefined
+  const timestamp = entries.find((entry) => isRecord(entry) && typeof entry.timestamp === "string")?.timestamp
+  const since = typeof timestamp === "string" && Number.isFinite(Date.parse(timestamp))
+    ? new Date(Date.parse(timestamp) - 1_000).toISOString() : undefined
+  return { id, entries, ...(since === undefined ? {} : { since }) }
 }
 
 function readSessionId(eventCtx: unknown): string | undefined {
@@ -217,4 +259,12 @@ function isMemoryToolName(value: unknown): boolean {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value)
+}
+
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+}
+
+function describe(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
 }

@@ -10,6 +10,7 @@ import { authorFlags, commandError, normalizePathspecs, normalizeSeedPath } from
 import { parseLogOutput, parseNulPaths } from "./repo-log"
 import { parseCatFileBatch, parseLsTreeBlobs, parseLsTreeSized } from "./repo-tree"
 import { assertNoUnrelatedChanges } from "./repo-status"
+import { runMemoryMaintenance } from "./maintenance"
 import { withSerializedGitWorktreeMutation } from "./worktree-mutation-queue"
 import type {
   GitCommitAuthor,
@@ -125,8 +126,8 @@ export class GitMemoryRepo {
     return (await this.git(["-c", "core.quotePath=false", "status", "--porcelain", "--untracked-files=all", ...suffix])).stdout
   }
 
-  async head(): Promise<string | null> {
-    const result = await this.gitResult(["rev-parse", "--verify", "HEAD"])
+  async head(timeoutMs = GIT_TIMEOUT_MS): Promise<string | null> {
+    const result = await this.gitResult(["rev-parse", "--verify", "HEAD"], undefined, timeoutMs)
     if (result.code !== 0) return null
     return result.stdout.trim() || null
   }
@@ -179,10 +180,16 @@ export class GitMemoryRepo {
     if (options.grep !== undefined && options.grep.length > 0) {
       argv.push("--fixed-strings", "--all-match", ...options.grep.map((pattern) => `--grep=${pattern}`))
     }
+    if (options.grepRegex !== undefined && options.grepRegex.length > 0) {
+      argv.push("--extended-regexp", "--all-match", ...options.grepRegex.map((pattern) => `--grep=${pattern}`))
+    }
+    if (options.since !== undefined) argv.push(`--since=${options.since}`)
     if (options.limit !== undefined) argv.push("-n", String(options.limit))
     if (options.range !== undefined) argv.push(options.range)
     if (options.paths !== undefined && options.paths.length > 0) argv.push("--", ...options.paths)
-    const records = parseLogOutput((await this.git(argv)).stdout)
+    const result = await this.gitResult(argv, undefined, options.timeoutMs)
+    if (result.code !== 0) throw commandError(argv, result)
+    const records = parseLogOutput(result.stdout)
     if (options.includePaths !== true) return records
     return Promise.all(records.map(async (commit) => ({
       ...commit,
@@ -190,6 +197,11 @@ export class GitMemoryRepo {
         "diff-tree", "--no-commit-id", "--name-only", "-z", "-r", commit.sha,
       ])).stdout),
     })))
+  }
+
+  /** Off the write/prompt path; caller owns logging and detached scheduling. */
+  async maintain(now = Date.now()): Promise<boolean> {
+    return runMemoryMaintenance(this.dir, this.exec, now)
   }
 
   async worktreeAdd(path: string, branch: string, startPoint = "HEAD"): Promise<void> {
@@ -270,10 +282,10 @@ export class GitMemoryRepo {
     return result
   }
 
-  private gitResult(argv: readonly string[], stdin?: string): Promise<GitExecResult> {
+  private gitResult(argv: readonly string[], stdin?: string, timeoutMs = GIT_TIMEOUT_MS): Promise<GitExecResult> {
     return this.exec.run(argv, {
       cwd: this.dir,
-      timeoutMs: GIT_TIMEOUT_MS,
+      timeoutMs,
       env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
       ...(stdin === undefined ? {} : { stdin }),
     })

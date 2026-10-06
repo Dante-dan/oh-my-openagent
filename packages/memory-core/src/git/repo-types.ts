@@ -46,6 +46,9 @@ export interface MemoryCommit {
 }
 
 export interface GitLogOptions {
+  readonly since?: string
+  readonly timeoutMs?: number
+  readonly grepRegex?: readonly string[]
   readonly range?: string
   readonly paths?: readonly string[]
   readonly limit?: number

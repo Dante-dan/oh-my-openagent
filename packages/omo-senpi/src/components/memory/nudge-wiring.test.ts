@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test"
+import { afterEach, describe, expect, test, spyOn } from "bun:test"
 import { mkdtemp, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -6,7 +6,7 @@ import { realpathSync } from "node:fs"
 import { rmEfaultTolerant } from "./teardown.test-support"
 
 import type { ThemeColor } from "@code-yeongyu/senpi"
-import { GitMemoryRepo, buildIdentityPaths } from "@oh-my-opencode/memory-core"
+import { GitMemoryRepo, buildIdentityPaths, createNodeGitExec } from "@oh-my-opencode/memory-core"
 
 import { createMemoryBinding } from "./binding"
 import { createMemoryIdentityContext } from "./context"
@@ -60,6 +60,15 @@ describe("createMemoryNudgeWiring", () => {
   test("#given a fresh session #when two interactive inputs are accepted while extension and rejected inputs occur #then only the accepted interactive turns reach the threshold", async () => {
     // given
     const { context, repo } = await fixture()
+    // Issue #9667 explicitly asks for a synthetic large-history no-save session regression.
+    const initial = await repo.head()
+    const commits = Array.from({ length: 12_000 }, (_, index) =>
+      `commit refs/heads/main\ncommitter History <history@omo.local> ${946684800 + index} +0000\ndata 7\nhistory\n${index === 0 ? `from ${initial}\n` : ""}\n`).join("")
+    const imported = await createNodeGitExec().run(["fast-import", "--quiet"], {
+      cwd: repo.dir, timeoutMs: 30_000, stdin: commits,
+    })
+    expect(imported.code).toBe(0)
+    const log = spyOn(repo, "log")
     const pi = new MemoryFakeExtensionAPI()
     const wiring = createMemoryNudgeWiring({
       resolveContext: () => context,
@@ -83,8 +92,12 @@ describe("createMemoryNudgeWiring", () => {
     // then
     expect(beforeThreshold).toBeUndefined()
     expect(await wiring.nudgeTurns(repo, "session-1", context.identity)).toBe(2)
+    expect(log).toHaveBeenCalledTimes(1)
+    expect(log.mock.calls[0]?.[0]).toMatchObject({ limit: 1, timeoutMs: 500 })
+    expect(log.mock.calls[0]?.[0]?.since).toBeDefined()
+    log.mockRestore()
     expect(pi.handlers.map((handler) => handler.event)).not.toContain("agent_settled")
-    expect(pi.entries.at(-1)).toEqual({
+    expect(pi.entries.at(-1)).toMatchObject({
       customType: ACCEPTED_TURNS_ENTRY_TYPE,
       data: { version: 1, sessionId: "session-1", priorUserTurns: 2, sessionBaselineTurns: 0 },
     })
@@ -196,6 +209,51 @@ describe("createMemoryNudgeWiring", () => {
     // then
     expect(cleared).toBeUndefined()
     expect(await wiring.nudgeTurns(repo, "session-clear", context.identity)).toBeUndefined()
+  }, 30_000)
+
+  test("#given an already checked HEAD #when more prompts arrive #then history is skipped and resume keeps its save watermark", async () => {
+    const { context, repo } = await fixture()
+    const pi = new MemoryFakeExtensionAPI()
+    const wiring = createMemoryNudgeWiring({ resolveContext: () => context,
+      resolveSettings: () => ({ enabled: true, everyUserTurns: 2 }) })
+    wiring.register(pi)
+    const ctx = eventContext("cached", [{ type: "custom", customType: ACCEPTED_TURNS_ENTRY_TYPE,
+      data: { version: 1, sessionId: "cached", priorUserTurns: 8, sessionBaselineTurns: 0 } }])
+    await pi.dispatch("session_start", {}, ctx)
+    await writeFile(join(repo.dir, "saved.md"), "saved\n")
+    await repo.commitWrite(["saved.md"], "save\n\nOmo-Writer: memory-tool\nOmo-Session: cached\nOmo-Turn: 7",
+      { agentId: context.identity, authorName: context.identity })
+    const log = spyOn(repo, "log")
+    expect(await wiring.nudgeTurns(repo, "cached", context.identity)).toBeUndefined()
+    expect(await wiring.nudgeTurns(repo, "cached", context.identity)).toBeUndefined()
+    expect(log).toHaveBeenCalledTimes(1)
+    expect(log.mock.calls[0]?.[0]).toMatchObject({ limit: 1, timeoutMs: 500 })
+    const entry = pi.entries.at(-1)!
+    const resumed = createMemoryNudgeWiring({ resolveContext: () => context,
+      resolveSettings: () => ({ enabled: true, everyUserTurns: 2 }) })
+    const other = new MemoryFakeExtensionAPI()
+    resumed.register(other)
+    await other.dispatch("session_start", {}, eventContext("cached", [{ type: "custom", ...entry }]))
+    expect(await resumed.nudgeTurns(repo, "cached", context.identity)).toBeUndefined()
+    expect(log).toHaveBeenCalledTimes(1)
+    log.mockRestore()
+  }, 30_000)
+
+  test("#given a failed git check #when a prompt compiles #then the nudge is skipped and failure is logged without throwing", async () => {
+    const { context, repo } = await fixture()
+    const warnings: string[] = []
+    const pi = new MemoryFakeExtensionAPI()
+    const wiring = createMemoryNudgeWiring({ resolveContext: () => context,
+      resolveSettings: () => ({ enabled: true, everyUserTurns: 1 }),
+      logger: { debug: () => {}, info: () => {}, error: () => {}, warn: (message) => warnings.push(message) } })
+    wiring.register(pi)
+    await pi.dispatch("session_start", {}, eventContext("failure"))
+    const head = spyOn(repo, "head").mockRejectedValue(new Error("git timeout"))
+    expect(await wiring.nudgeTurns(repo, "failure", context.identity)).toBeUndefined()
+    expect(await wiring.nudgeTurns(repo, "failure", context.identity)).toBeUndefined()
+    expect(head).toHaveBeenCalledTimes(1)
+    expect(warnings).toContain("omo-senpi memory nudge check failed")
+    head.mockRestore()
   }, 30_000)
 
   test("#given a bound non-auto identity #when a memory MCP tool call starts #then unforgeable identity and accepted-turn provenance are injected in place", async () => {

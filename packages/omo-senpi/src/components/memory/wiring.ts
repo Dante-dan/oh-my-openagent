@@ -43,6 +43,7 @@ export function createMemoryWiring(options: MemoryWiringOptions): MemoryWiring {
   const { resolveContext, journalWiringFor, factsWiringFor, runtimeFor } = runtimeWiring
 
   const nudgeWiring = createMemoryNudgeWiring({
+    ...(options.logger === undefined ? {} : { logger: options.logger }),
     resolveContext,
     resolveSettings: (identity) => {
       const settings = resolveMemorySettings(options.loadConfig({ cwd: options.cwd() }).config.memory)
