@@ -36,6 +36,7 @@ export interface PostEditDiagnosticsResult {
 interface DiagnosticBlock {
 	filePath: string;
 	diagnostics: string;
+	blocking: boolean;
 }
 
 export interface LspPostEditSessionState {
@@ -104,9 +105,11 @@ export async function appendPostEditDiagnostics(
 	return {
 		content: [
 			...event.content,
-			...blocks.map(({ filePath, diagnostics }) => ({
+			...blocks.map(({ filePath, diagnostics, blocking }) => ({
 				type: "text" as const,
-				text: `\n\nLSP errors detected in ${filePath}, please fix:\n${diagnostics}`,
+				text: blocking
+					? `\n\nLSP errors detected in ${filePath}, please fix:\n${diagnostics}`
+					: `\n\nLSP diagnostic status for ${filePath}:\n${diagnostics}`,
 			})),
 		],
 		widgetLines: undefined,

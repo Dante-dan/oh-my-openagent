@@ -115,6 +115,29 @@ describe("omo-senpi lsp post-edit diagnostics", () => {
     expect(widgetCalls).toEqual([{ key: "omo-senpi-lsp", content: undefined, placement: "belowEditor" }])
   })
 
+  it("#given a transient freshness timeout #when post-edit diagnostics run #then it requests a retry without blaming the edit", async () => {
+    const test = setup()
+    let calls = 0
+    createLspComponent({
+      callDaemonTool: async () => {
+        calls += 1
+        return {
+          content: [{ type: "text", text: "Timed out waiting for fresh diagnostics" }],
+          details: { errorKind: "freshness_timeout" },
+          isError: true,
+        }
+      },
+    }).register(test.pi, test.ctx)
+
+    const first = await test.pi.dispatch("tool_result", mutationEvent("src/file.ts"), sessionContext("session-1"))
+    await test.pi.dispatch("tool_result", mutationEvent("src/file.ts"), sessionContext("session-1"))
+
+    expect(JSON.stringify(first)).toContain("LSP diagnostics not ready")
+    expect(JSON.stringify(first)).not.toContain("LSP errors detected")
+    expect(JSON.stringify(first)).not.toContain("please fix")
+    expect(calls).toBe(2)
+  })
+
   it("#given many mutated files #when post-edit diagnostics run #then shared orchestration dedupes, bounds concurrency, preserves order, and isolates failures", async () => {
     // given
     let active = 0

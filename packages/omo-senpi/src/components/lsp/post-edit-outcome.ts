@@ -10,6 +10,9 @@ export function postEditOutcomeFromDaemonResult(result: DaemonToolResult): PostE
 		.filter((block) => block.type === "text")
 		.map((block) => block.text)
 		.join("\n")
+	if (isRecord(result.details) && result.details["errorKind"] === "freshness_timeout") {
+		return { kind: "not_ready", text: `LSP diagnostics not ready: ${text}. Retry lsp_diagnostics after the language server finishes analyzing the file.` }
+	}
 	const availability = availabilityDetails(result.details)
 	if (availability === undefined) return text
 	if (availability["kind"] === "not_configured") {

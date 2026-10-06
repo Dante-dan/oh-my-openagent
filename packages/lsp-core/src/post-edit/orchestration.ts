@@ -12,6 +12,7 @@ export type PostEditDiagnosticsOutcome =
 			readonly kind: "not_configured";
 			readonly extension: string;
 	  }
+	| { readonly kind: "not_ready"; readonly text: string }
 	| PostEditNotInstalledOutcome;
 
 export type DiagnosticsRunner = (filePath: string) => Promise<PostEditDiagnosticsOutcome>;
@@ -19,7 +20,7 @@ export type DiagnosticsRunner = (filePath: string) => Promise<PostEditDiagnostic
 export interface PostEditDiagnosticsBlock {
 	readonly filePath: string;
 	readonly diagnostics: string;
-	/** False for missing-server guidance: it is feedback for the model, not a defect in the edit. */
+	/** False for availability guidance: it is feedback for the model, not a defect in the edit. */
 	readonly blocking: boolean;
 }
 
@@ -190,8 +191,10 @@ function classifyDiagnostics(
 ):
 	| { readonly kind: "clean" }
 	| { readonly kind: "not_configured"; readonly extension: string }
-	| { readonly kind: "block"; readonly diagnostics: string } {
+	| { readonly kind: "block"; readonly diagnostics: string }
+	| { readonly kind: "guidance"; readonly text: string } {
 	if (typeof outcome !== "string") {
+		if (outcome.kind === "not_ready") return { kind: "guidance", text: outcome.text };
 		return { kind: "not_configured", extension: outcome.extension };
 	}
 	const diagnostics = outcome;
