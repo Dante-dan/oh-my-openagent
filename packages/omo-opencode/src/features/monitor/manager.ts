@@ -1,4 +1,4 @@
-import { PrWatchManager } from "../pr-watch/manager"
+import { acquirePrWatchManager, type PrWatchManager } from "../pr-watch/manager"
 import { subagentSessions } from "../claude-code-session-state"
 import { registerManagerForCleanup, unregisterManagerForCleanup } from "../background-agent/process-cleanup"
 import { log } from "../../shared"
@@ -42,7 +42,7 @@ export class MonitorManager implements MonitorManagerContract {
   private shutdownTriggered = false
 
   constructor(private readonly options: MonitorManagerOptions) {
-    this.prWatches = new PrWatchManager(options.pluginContext)
+    this.prWatches = acquirePrWatchManager(options.pluginContext)
     this.config = { ...DEFAULT_MONITOR_CONFIG, ...options.config }
     this.scheduler = options.deps?.scheduler ?? createRealScheduler()
     this.registerCleanup = options.deps?.registerManagerForCleanup ?? registerManagerForCleanup
