@@ -3,6 +3,7 @@ import {
   GitMemoryRepo,
   markMemoryBlock,
   replaceMemoryBlock,
+  type ExternalProjectionLimits,
 } from "@oh-my-opencode/memory-core"
 
 import { createLazyMemoryCompileCache, type MemoryCompileCache } from "./lazy-compile-cache"
@@ -40,6 +41,7 @@ export interface MemoryPromptInjectionOptions {
   readonly recordPin?: (record: ProjectionPinRecord) => void
   readonly onRepin?: (sessionId: string, reason: Exclude<ProjectionRepinReason, "first-turn">) => void
   readonly resolveCompileWarnTokens?: (identity: string) => number
+  readonly resolveProjectionLimits?: (identity: string) => ExternalProjectionLimits
   readonly resolveNudgeTurns?: (
     repo: GitMemoryRepo,
     sessionId: string,
@@ -50,6 +52,11 @@ export interface MemoryPromptInjectionOptions {
     sessionId: string,
     identity: string,
   ) => Promise<{ readonly sha: string } | undefined>
+  /**
+   * A notice input (the nudge count or the soul notice) failed or timed out. The turn goes on without
+   * that notice; the failure is reported here, never thrown into the extension (#9667).
+   */
+  readonly onNoticeInputFailed?: (input: "nudge" | "soul", sessionId: string, error: unknown) => void
 }
 
 /**
@@ -68,6 +75,18 @@ export function createMemoryPromptHandler(
   // this memo every prompt listed the tree and read every system blob again (one git process each):
   // 45 git spawns between Enter and the provider request in a 2.7k-commit identity.
   const pressureEstimates = new Map<string, number>()
+  async function noticeInput<T>(
+    input: "nudge" | "soul",
+    sessionId: string,
+    read: () => Promise<T | undefined> | undefined,
+  ): Promise<T | undefined> {
+    try {
+      return await read()
+    } catch (error) {
+      options.onNoticeInputFailed?.(input, sessionId, error)
+      return undefined
+    }
+  }
   return async (payload, eventCtx) => {
     const preview = isRecord(payload) && payload.preview === true
     const systemPrompt = readSystemPrompt(payload)
@@ -81,15 +100,21 @@ export function createMemoryPromptHandler(
     // A preview (senpi's prompt-cache prewarm) keeps only the systemPrompt: compose at the revision the
     // real turn will use, and record no pin, consume no watermark, announce no repin. The notice inputs
     // only feed the message a preview discards, so their reads (a git log each) are skipped too.
-    const nudgeTurns = preview ? undefined : await options.resolveNudgeTurns?.(repo, session.id, context.identity)
-    const soulNotice = preview ? undefined : await options.resolveSoulNotice?.(repo, session.id, context.identity)
+    const nudgeTurns = preview
+      ? undefined
+      : await noticeInput("nudge", session.id, () => options.resolveNudgeTurns?.(repo, session.id, context.identity))
+    const soulNotice = preview
+      ? undefined
+      : await noticeInput("soul", session.id, () => options.resolveSoulNotice?.(repo, session.id, context.identity))
     const pinInput = { repo, sessionId: session.id, branch: session.branch, head: await repo.head() }
     const turn: ProjectionTurn = preview
       ? { revision: await pins.peek(pinInput) }
       : await pins.advance({ ...pinInput, record: recordPin })
     if (turn.repinned !== undefined && turn.repinned !== "first-turn") options.onRepin?.(session.id, turn.repinned)
+    const projection = options.resolveProjectionLimits?.(context.identity)
     const block = await cache.compile(repo, `${MEMORY_PROMPT_TEMPLATE}:${context.identity}`, {
       agentId: context.identity,
+      ...(projection === undefined ? {} : { projection }),
     }, turn.revision)
     const pressureBlock = await addMemoryPressureMetadata(
       block,
