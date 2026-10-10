@@ -113,7 +113,8 @@ const builtExtensionPath = join(packageRoot, "plugin", "extensions", "omo.js")
 // slack left under the previous ceiling); this branch measures 1,489,889 (+6,864) after minification
 // (linux/amd64, node 24 + bun 1.4.2). 1,530,000 keeps ~2.7% headroom rather than the failing value.
 // Memory compile/cache deferred for #9515: 1,448,321 -> 1,445,605 bytes (2,716 removed); ~2.7% headroom without increasing the existing ceiling.
-// MERGE-MEASURE-PLACEHOLDER
+// Merged with dev 762839e55: this slice now measures 1525124 bytes (linux/amd64, node 24 + bun 1.4.2), so the
+// ceiling stays at dev's 1,530,000 rather than the lower value set before the memory secret boundary landed.
 const BUDGET_BYTES = 1_530_000
 
 describe("omo-senpi bundle size budget", () => {
