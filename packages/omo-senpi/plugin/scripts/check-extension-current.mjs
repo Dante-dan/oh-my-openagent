@@ -13,6 +13,7 @@ export async function checkExtensionCurrent(options = {}) {
     memberOutput,
     supervisorOutput,
     advisorRuntimeOutput,
+    sidePanelRuntimeOutput,
     toolkitSdkOutput,
     rollbackRuntimeOutput,
     computerUseOutput,
@@ -36,6 +37,8 @@ export async function checkExtensionCurrent(options = {}) {
   if (currentSupervisor === undefined) return { ok: false, reason: "missing-output", output: supervisorOutput }
   const currentAdvisorRuntime = await readBuiltEntry(advisorRuntimeOutput)
   if (currentAdvisorRuntime === undefined) return { ok: false, reason: "missing-output", output: advisorRuntimeOutput }
+  const currentSidePanelRuntime = await readBuiltEntry(sidePanelRuntimeOutput)
+  if (currentSidePanelRuntime === undefined) return { ok: false, reason: "missing-output", output: sidePanelRuntimeOutput }
   const currentMemoryDoctor = await readBuiltEntry(memoryDoctorOutput)
   const currentLspFormatter = await readBuiltEntry(lspFormatterOutput)
   if (currentLspFormatter === undefined) return { ok: false, reason: "missing-output", output: lspFormatterOutput }
@@ -56,6 +59,7 @@ export async function checkExtensionCurrent(options = {}) {
     memberOutputPath: join(tempRoot, "omo-member.js"),
     supervisorOutputPath: join(tempRoot, "memory-run-supervisor.mjs"),
     advisorRuntimeOutputPath: join(tempRoot, "omo-init-deep-advisor.js"),
+    sidePanelRuntimeOutputPath: join(tempRoot, "omo-side-panel.js"),
     toolkitSdkOutputPath: join(tempRoot, "runtime", "agent-toolkit-sdk", "sdk.js"),
     rollbackRuntimeOutputPath: join(tempRoot, "runtime", "rollback-migrate.js"),
     memoryDoctorOutputPath: join(tempRoot, "omo-memory-doctor.js"),
@@ -75,6 +79,7 @@ export async function checkExtensionCurrent(options = {}) {
       [currentMember, expected.memberOutputPath, memberOutput],
       [currentSupervisor, expected.supervisorOutputPath, supervisorOutput],
       [currentAdvisorRuntime, expected.advisorRuntimeOutputPath, advisorRuntimeOutput],
+      [currentSidePanelRuntime, expected.sidePanelRuntimeOutputPath, sidePanelRuntimeOutput],
       [currentMemoryDoctor, expected.memoryDoctorOutputPath, memoryDoctorOutput],
       [currentLspFormatter, expected.lspFormatterOutputPath, lspFormatterOutput],
       [currentMemoryMemfs, expected.memoryMemfsOutputPath, memoryMemfsOutput],
@@ -93,7 +98,7 @@ export async function checkExtensionCurrent(options = {}) {
     if (currentPrelude !== expectedPrelude) {
       return { ok: false, reason: "stale-output", output: join(dirname(output), COMPUTER_PRELUDE_ASSET_NAME) }
     }
-    return { ok: true, output, taskOutput, memberOutput, advisorRuntimeOutput, computerUseOutput, gatewayStoreWorkerOutput, threadSdkOutput }
+    return { ok: true, output, taskOutput, memberOutput, advisorRuntimeOutput, sidePanelRuntimeOutput, computerUseOutput, gatewayStoreWorkerOutput, threadSdkOutput }
   } finally {
     await rm(tempRoot, { recursive: true, force: true })
   }
