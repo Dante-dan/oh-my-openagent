@@ -116,7 +116,8 @@ const builtExtensionPath = join(packageRoot, "plugin", "extensions", "omo.js")
 // measures 1,447,634 bytes; moving the formatter behind its first successful mutation
 // reduces omo.js to 1,358,609 bytes (-89,025). A 1,400,000 byte ceiling leaves ~3%
 // headroom. Formatter inputs belong only to omo-lsp-formatter.js; no new dependencies.
-// MERGE-MEASURE-PLACEHOLDER
+// Merged with dev 762839e55: this slice now measures 1439179 bytes (linux/amd64, node 24 + bun 1.4.2), so the
+// ceiling stays at dev's 1,530,000 rather than the lower value set before the memory secret boundary landed.
 const BUDGET_BYTES = 1_530_000
 
 describe("omo-senpi bundle size budget", () => {
