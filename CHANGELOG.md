@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+**Evaluation reviewers can resolve their attempt directory and write reports.** The code-reviewer, gate-reviewer and qa-executor agents now allow `eval`, which their prompts need to read `currentAttemptDir` through the agent-toolkit SDK. Their bash commands also use eval when `bashEvalOnly` is enabled. ([#9612](https://github.com/code-yeongyu/oh-my-openagent/issues/9612), [#9619](https://github.com/code-yeongyu/oh-my-openagent/pull/9619))
+
 ## [5.1.29] - 2026-10-09
 
 **Child tasks and Kibitzer wakes of a fast-mode session no longer fail with `model_unavailable`: a `-fast` pin is accepted when the session starts on its paired base model.** Since 5.1.25, a category pinned to a `-fast` catalog variant such as `chatgpt-subscription/gpt-6-luna-fast` was refused after start, because senpi starts a `-fast` pin on its base model with the priority tier. Kibitzer recall wakes failed on every wake, and the built-in fast-first chains (`quick`, `deep-low`, `deep-high`, `ultrabrain`) silently skipped their first model. A run that started on the standard tier instead of priority is now accepted and recorded on the task (`effective_model.service_tier`) instead of refused. ([#9793](https://github.com/code-yeongyu/oh-my-openagent/issues/9793), [#9808](https://github.com/code-yeongyu/oh-my-openagent/pull/9808), [#9812](https://github.com/code-yeongyu/oh-my-openagent/issues/9812), [#9813](https://github.com/code-yeongyu/oh-my-openagent/pull/9813))
