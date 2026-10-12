@@ -14,6 +14,19 @@ function rejectionReason(chain: readonly ComputerCallStep[]): string {
 }
 
 describe("isReadOnlyComputerCall", () => {
+	it.each(["screenshot", "click", "doubleClick", "move", "drag", "scroll", "type", "press"])(
+		"classifies a display %s hop by its input policy",
+		(method) => {
+			// When
+			const readOnly = isReadOnlyComputerCall([{ method: "display", args: ["all"] }, { method }]);
+			// Then
+			expect(readOnly).toBe(method === "screenshot");
+		},
+	);
+
+	it("refuses window-only helpers on a display handle", () => {
+		expect(rejectionReason([{ method: "display" }, { method: "raise" }])).toBe("unknownMethod");
+	});
 	it("returns true when a window screenshot chain is inspection-only", () => {
 		expect(isReadOnlyComputerCall([{ method: "window" }, { method: "screenshot" }])).toBe(true);
 	});
@@ -48,5 +61,19 @@ describe("isReadOnlyComputerCall", () => {
 
 	it("rejects a chained call on a root that returns no handle", () => {
 		expect(rejectionReason([{ method: "screenshot" }, { method: "click" }])).toBe("notChainable");
+	});
+
+	it("classifies menu.items as inspection and menu.select as mutation on a window handle", () => {
+		expect(isReadOnlyComputerCall([{ method: "window" }, { method: "menu.items" }])).toBe(true);
+		expect(isReadOnlyComputerCall([{ method: "window" }, { method: "menu.select" }])).toBe(false);
+	});
+
+	it("classifies control.acquire and control.release as exec (#9651 B5b)", () => {
+		expect(isReadOnlyComputerCall([{ method: "control.acquire", args: [{ reason: "click Run" }] }])).toBe(false);
+		expect(isReadOnlyComputerCall([{ method: "control.release" }])).toBe(false);
+	});
+
+	it("classifies control.state as read (#9651 B5b)", () => {
+		expect(isReadOnlyComputerCall([{ method: "control.state" }])).toBe(true);
 	});
 });

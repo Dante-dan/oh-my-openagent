@@ -12,10 +12,14 @@ export const ENGINE_METHODS = [
 	"engine.hello",
 	"session.open",
 	"session.close",
+	"control.grant",
+	"control.revoke",
+	"control.state",
 	"capabilities",
 	"displays",
 	"windows",
 	"capture",
+	"captureRegion",
 	"click",
 	"moveMouse",
 	"drag",
@@ -23,6 +27,8 @@ export const ENGINE_METHODS = [
 	"typeText",
 	"keyChord",
 	"raiseWindow",
+	"menus.items",
+	"menus.select",
 	"clipboard.read",
 	"clipboard.write",
 	"ax.snapshot",
@@ -76,6 +82,8 @@ export const ERROR_CODES = [
 	"CursorRestoreFailed",
 	"FocusRestoreFailed",
 	"TransactionFailed",
+	"InputBusy",
+	"ControlRequired",
 ] as const;
 
 export type EngineMethod = (typeof ENGINE_METHODS)[number];

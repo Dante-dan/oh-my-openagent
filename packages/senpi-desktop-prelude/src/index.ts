@@ -14,6 +14,10 @@ const METHOD_ALLOWLIST: readonly string[] = [
 	"click",
 	"clipboard.read",
 	"clipboard.write",
+	"control.acquire",
+	"control.release",
+	"control.state",
+	"display",
 	"displays",
 	"doubleClick",
 	"drag",
@@ -23,6 +27,8 @@ const METHOD_ALLOWLIST: readonly string[] = [
 	"focusedElement",
 	"focusedWindow",
 	"move",
+	"menu.items",
+	"menu.select",
 	"parent",
 	"perform",
 	"press",
@@ -35,6 +41,7 @@ const METHOD_ALLOWLIST: readonly string[] = [
 	"value",
 	"window",
 	"windows",
+	"zoom",
 ];
 
 /**
