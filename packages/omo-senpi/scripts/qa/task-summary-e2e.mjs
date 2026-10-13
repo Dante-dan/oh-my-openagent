@@ -3,10 +3,11 @@
 // background children with task_summary (normal + over-limit), then this driver asserts the
 // on-disk record, the tool-result text, and the widget/footer row rendered from the real record.
 // Usage: node scripts/qa/task-summary-e2e.mjs   (TASK_SUMMARY_E2E_OUT_DIR=<dir> writes a receipt)
-import { spawn } from "node:child_process"
+import { spawn, spawnSync } from "node:child_process"
+import { createHash } from "node:crypto"
 import { SessionManager, SessionSelectorComponent, initTheme } from "@code-yeongyu/senpi"
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs"
-import { delimiter, dirname, join, resolve } from "node:path"
+import { chmodSync, copyFileSync, cpSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs"
+import { basename, delimiter, dirname, join, resolve } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import { createSandbox, seedSandbox } from "./drive.mjs"
 import { isolatedChildEnv, sandboxStateDir } from "./sandbox-child-env.mjs"
@@ -14,6 +15,51 @@ import { isolatedChildEnv, sandboxStateDir } from "./sandbox-child-env.mjs"
 const scriptDir = dirname(fileURLToPath(import.meta.url))
 const packageRoot = dirname(scriptDir)
 const mockProviderEntry = join(scriptDir, "task-e2e-mock-provider.ts")
+
+// A daemon uses the package's static launch spec, not the parent's CLI -e entries.
+// Give only this scenario's plugin copy the local provider so the actual host can
+// resolve the same model as the parent; never alter the shared built package.
+function seedHostProvider(sandbox) {
+  const plugin = join(sandbox.root, "plugin")
+  cpSync(resolve(scriptDir, "../../plugin"), plugin, { recursive: true })
+  const providerName = basename(mockProviderEntry)
+  copyFileSync(mockProviderEntry, join(plugin, providerName))
+  const specPath = join(plugin, "daemon-launch-spec.json")
+  const spec = JSON.parse(readFileSync(specPath, "utf8"))
+  spec.core.extensions.push(`./${providerName}`)
+  writeFileSync(specPath, `${JSON.stringify(spec, null, 2)}\n`)
+  chmodSync(specPath, 0o600)
+  const settingsPath = join(sandbox.agentDir, "settings.json")
+  const settings = JSON.parse(readFileSync(settingsPath, "utf8"))
+  settings.packages = [plugin]
+  writeFileSync(settingsPath, `${JSON.stringify(settings, null, 2)}\n`)
+}
+
+async function stopOwnedHosts(senpiBin, sandbox) {
+  const alt = `/tmp/omo-rpc-${createHash("sha256").update(sandbox.agentDir).digest("hex").slice(0, 8)}`
+  const sockets = []
+  for (const root of [join(sandbox.agentDir, "rpc", "shards"), alt]) {
+    if (!existsSync(root)) continue
+    for (const name of readdirSync(root)) {
+      const socket = join(root, name)
+      if (/^p-[0-9a-f]{16}\.sock$/.test(name) && lstatSync(socket).isSocket()) sockets.push(socket)
+    }
+  }
+  const receipts = []
+  for (const socket of sockets) {
+    const options = { cwd: sandbox.cwd, env: childEnv(process.env, sandbox, join(sandbox.root, "sessions")), encoding: "utf8", timeout: 30_000 }
+    const status = spawnSync(senpiBin, ["host", "status", "--socket", socket, "--json"], options)
+    const before = JSON.parse(status.stdout?.trim() || "{}")
+    const stopped = spawnSync(senpiBin, ["host", "stop", "--socket", socket, "--force", "--json"], options)
+    const receipt = JSON.parse(stopped.stdout?.trim() || "{}")
+    const pid = before.pid ?? receipt.pid
+    const alive = () => { if (typeof pid !== "number") return false; try { process.kill(pid, 0); return true } catch { return false } }
+    const deadline = Date.now() + 5_000
+    while (alive() && Date.now() < deadline) await new Promise((resolveWait) => setTimeout(resolveWait, 50))
+    receipts.push({ socket, pid, stopExit: stopped.status, receipt, pidStillAlive: alive() })
+  }
+  return receipts
+}
 
 const SUMMARY = "Audit auth session flow"
 const OVER_LIMIT_MARKER = "audit auth session flow and the surrounding token refresh pipeline for regressions across the relay"
@@ -144,6 +190,7 @@ async function run() {
   if (senpiBin === null) throw new Error("senpi-binary-unavailable")
   const sandbox = createSandbox()
   seedSandbox(sandbox)
+  if (executionMode === "process" && processRunner === "host") seedHostProvider(sandbox)
   const sessionDir = join(sandbox.root, "sessions")
   mkdirSync(sessionDir, { recursive: true })
   mkdirSync(join(sandbox.cwd, ".omo"), { recursive: true })
@@ -153,6 +200,7 @@ async function run() {
   const checks = []
   const check = (name, ok, detail) => checks.push({ name, ok, detail })
   let run = { status: 2, error: null }
+  let hostCleanup = []
   try {
     run = await runChild(
       senpiBin,
@@ -214,11 +262,15 @@ async function run() {
       writeFileSync(join(outDir, "transcript-tail.txt"), transcript.slice(-6000))
     }
   } finally {
+    if (executionMode === "process" && processRunner === "host") {
+      hostCleanup = await stopOwnedHosts(senpiBin, sandbox)
+      check("owned-host-cleanup", hostCleanup.every((entry) => entry.stopExit === 0 && !entry.pidStillAlive), JSON.stringify(hostCleanup))
+    }
     rmSync(sandbox.root, { recursive: true, force: true })
   }
 
   const result = checks.every((entry) => entry.ok) && run.status === 0 ? "PASS" : "FAIL"
-  const payload = { result, checks, sandboxCleaned: !existsSync(sandbox.root), cleanup: `removed ${sandbox.root}` }
+  const payload = { result, checks, hostCleanup, sandboxCleaned: !existsSync(sandbox.root), cleanup: `removed ${sandbox.root}` }
   const outDir = process.env.TASK_SUMMARY_E2E_OUT_DIR
   if (outDir !== undefined) {
     mkdirSync(outDir, { recursive: true })
