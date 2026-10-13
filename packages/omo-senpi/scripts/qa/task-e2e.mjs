@@ -32,6 +32,8 @@ import {
   SYNC_SCRIPT,
 } from "./task-e2e-scenarios.mjs"
 import { isAlive, killTree } from "./task-e2e-process.mjs"
+import { seedTaskProvider, seededTaskSandboxes } from "./task-provider-sandbox.mjs"
+import { cleanupTaskHosts, taskVerdictExitCode } from "./task-e2e-host-cleanup.mjs"
 import { runTaskResumeScenarios } from "./task-resume-e2e.mjs"
 import { isolatedChildEnv, sandboxStateDir } from "./sandbox-child-env.mjs"
 
@@ -52,6 +54,7 @@ function findOnPath(bin) {
 function seedScenario(script, { withMarker } = {}) {
   const sandbox = createSandbox()
   seedSandbox(sandbox)
+  seedTaskProvider(sandbox, mockProviderEntry)
   const sessionDir = join(sandbox.root, "sessions")
   mkdirSync(sessionDir, { recursive: true })
   const omoDir = join(sandbox.cwd, ".omo")
@@ -162,6 +165,7 @@ async function main() {
   const senpiBin = findOnPath(process.env.SENPI_BIN?.trim() || "senpi")
   if (senpiBin === null) {
     console.log(JSON.stringify({ result: "SKIP", reason: "senpi-binary-unavailable", providedAgentDir }))
+    process.exitCode = taskVerdictExitCode("SKIP")
     return
   }
 
@@ -169,14 +173,20 @@ async function main() {
   const capture = {}
   const pids = []
   const sandboxes = []
+  const hostCleanup = []
   try {
     for (const runner of [runMainFlow, runBatchFlow, runSyncFlow, runNegativeFlow]) {
       sandboxes.push(runner(senpiBin, checks, capture, pids))
     }
     // Plan todo 22: quit->resume revival scenarios live in their own module (this driver is oversize).
     sandboxes.push(...await runTaskResumeScenarios({ senpiBin, checks, capture, pids, outDir }))
+  } catch (error) {
+    checks.driver_completed = "FAIL"
+    capture.driverError = error instanceof Error ? error.message : String(error)
   } finally {
+    for (const sandbox of seededTaskSandboxes) if (!sandboxes.includes(sandbox)) sandboxes.push(sandbox)
     for (const pid of pids) if (isAlive(pid)) killTree(pid)
+    for (const sandbox of sandboxes) hostCleanup.push(await cleanupTaskHosts(senpiBin, sandbox))
   }
 
   const leakedPids = pids.filter(isAlive).length
@@ -186,7 +196,7 @@ async function main() {
   const { qaAttributedPaths, concurrentSessionPaths } = classifyRealSenpiChanges(allChangedRealPaths, sandboxTokens)
   const realSenpiUntouched = qaAttributedPaths.length === 0
   checks.real_senpi_untouched = realSenpiUntouched ? "PASS" : "FAIL"
-  checks.no_leaked_pids = leakedPids === 0 ? "PASS" : "FAIL"
+  checks.no_leaked_pids = leakedPids === 0 && hostCleanup.every((receipt) => receipt.proven) ? "PASS" : "FAIL"
 
   const values = Object.values(checks)
   const result = values.length > 0 && values.every((verdict) => verdict === "PASS") ? "PASS" : "FAIL"
@@ -194,6 +204,7 @@ async function main() {
     result,
     checks,
     leakedPids,
+    hostCleanup,
     spawnedPids: pids,
     realSenpiUntouched,
     realSenpiChangedPaths: qaAttributedPaths,
@@ -208,10 +219,12 @@ async function main() {
     mainTaskId: capture.mainTaskId,
     mainSignatures: capture.mainSignatures,
     mainExit: capture.main?.exit,
+    driverError: capture.driverError,
     batchTaskIds: capture.batchTaskIds,
   }
   writeEvidenceMaybe(outDir, capture, payload)
   console.log(JSON.stringify(payload))
+  process.exitCode = taskVerdictExitCode(result)
 }
 
 function writeEvidenceMaybe(outDir, capture, payload) {
