@@ -143,7 +143,10 @@ async function raceStarts(projectDir: string, prompts: readonly string[]): Promi
   const outcomes = await Promise.all(readers.map(async (read) => JSON.parse(await read()) as RaceOutcome))
   const exits = await Promise.all(children.map((child) => child.exited))
   const stderr = await Promise.all(errors)
-  exits.forEach((code, index) => expect(code, stderr[index]).toBe(0))
+  exits.forEach((code, index) => {
+    const diagnostics = JSON.stringify({ child: index, outcome: outcomes[index], stderr: stderr[index], outcomes }, null, 2)
+    expect(code, diagnostics).toBe(0)
+  })
   return outcomes
 }
 
@@ -659,15 +662,16 @@ describe("createDagManager concurrent starts", () => {
     const outcomes = await raceStarts(projectDir, ["draft the plan", "draft the plan"])
 
     // then
+    const diagnostics = JSON.stringify({ outcomes }, null, 2)
     const store = createDagFileStore({ project_dir: projectDir })
-    expect(runFiles(store)).toHaveLength(1)
-    expect(outcomes).toEqual(expect.arrayContaining([
+    expect(runFiles(store), diagnostics).toHaveLength(1)
+    expect(outcomes, diagnostics).toEqual(expect.arrayContaining([
       expect.objectContaining({ ok: true }),
       expect.objectContaining({ ok: true }),
     ]))
-    expect(new Set(outcomes.map((outcome) => outcome.runId)).size).toBe(1)
-    expect(outcomes.filter((outcome) => outcome.reused === false)).toHaveLength(1)
-    expect(outcomes.filter((outcome) => outcome.reused === true)).toHaveLength(1)
+    expect(new Set(outcomes.map((outcome) => outcome.runId)).size, diagnostics).toBe(1)
+    expect(outcomes.filter((outcome) => outcome.reused === false), diagnostics).toHaveLength(1)
+    expect(outcomes.filter((outcome) => outcome.reused === true), diagnostics).toHaveLength(1)
   }, 30_000)
 
   test("#given two OS processes racing the same key with different prompts #when both are released together #then one run is created and the conflicting submission mutates nothing", async () => {
@@ -678,17 +682,18 @@ describe("createDagManager concurrent starts", () => {
     const outcomes = await raceStarts(projectDir, ["draft the plan", "draft a different plan"])
 
     // then
+    const diagnostics = JSON.stringify({ outcomes }, null, 2)
     const store = createDagFileStore({ project_dir: projectDir })
     const runs = runFiles(store)
-    expect(runs).toHaveLength(1)
-    expect(outcomes.filter((outcome) => outcome.ok)).toHaveLength(1)
-    expect(outcomes.filter((outcome) => outcome.code === "definition_conflict")).toHaveLength(1)
+    expect(runs, diagnostics).toHaveLength(1)
+    expect(outcomes.filter((outcome) => outcome.ok), diagnostics).toHaveLength(1)
+    expect(outcomes.filter((outcome) => outcome.code === "definition_conflict"), diagnostics).toHaveLength(1)
     const winner = outcomes.find((outcome) => outcome.ok)?.runId as DagRunId
     const checkpoint = store.readCheckpoint<{ readonly definitionFingerprint: string }>(winner)
-    expect(store.readKey(parentSessionId, "release-plan")).toMatchObject({
+    expect(store.readKey(parentSessionId, "release-plan"), diagnostics).toMatchObject({
       runId: winner,
       definitionFingerprint: checkpoint?.definitionFingerprint,
     })
-    expect(store.readEvents(winner, 0, { limit: 10 }).events.map((event) => event.type)).toEqual(["dag.run.created"])
+    expect(store.readEvents(winner, 0, { limit: 10 }).events.map((event) => event.type), diagnostics).toEqual(["dag.run.created"])
   }, 30_000)
 })
