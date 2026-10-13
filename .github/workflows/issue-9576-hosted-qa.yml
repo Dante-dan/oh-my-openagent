@@ -1,0 +1,89 @@
+name: Issue 9576 official host lifecycle QA
+on:
+  push:
+    branches: [qa/9576-hosted-lifecycle-20261013]
+permissions:
+  contents: read
+jobs:
+  lifecycle:
+    if: github.repository == 'Dante-dan/oh-my-openagent'
+    runs-on: macos-15
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.4.2'
+      - name: Verify actual host and process inspection
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = arm64
+          sw_vers
+          ps -p $$ -o pid=,ppid=,pgid=,command=
+          git rev-parse HEAD
+      - name: Install locked dependencies
+        run: bun install --frozen-lockfile
+      - name: Resolve canonical ignored evidence directory
+        run: |
+          ev=$(node .agents/skills/senpi-qa/scripts/resolve-evidence-dir.mjs --repo-root "$GITHUB_WORKSPACE" --slug 20261013-9576-hosted-lifecycle)
+          mkdir -p "$ev"
+          echo "QA_EVIDENCE=$ev" >> "$GITHUB_ENV"
+          git rev-parse HEAD > "$ev/tested-head.txt"
+      - name: Download and verify official release binaries
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          for tag in v5.1.16 v5.1.0; do
+            dest="$RUNNER_TEMP/omo-$tag"
+            mkdir -p "$dest"
+            gh release download "$tag" --repo code-yeongyu/oh-my-openagent --pattern omo-darwin-arm64 --pattern SHA256SUMS --dir "$dest"
+            (cd "$dest"; awk '$NF == "omo-darwin-arm64" || $NF == "*omo-darwin-arm64"' SHA256SUMS > binary.sha256; test -s binary.sha256; shasum -a 256 -c binary.sha256)
+            chmod +x "$dest/omo-darwin-arm64"
+            shasum -a 256 "$dest/omo-darwin-arm64" >> "$QA_EVIDENCE/release-provenance.txt"
+          done
+      - name: Official v5.1.16 versus R0 lifecycle matrix
+        continue-on-error: true
+        id: release
+        run: |
+          node packages/omo-senpi/scripts/qa/task-host-e2e-shards.mjs --only rollback,index --bin "$RUNNER_TEMP/omo-v5.1.16/omo-darwin-arm64" --before-bin "$RUNNER_TEMP/omo-v5.1.0/omo-darwin-arm64" --out "$QA_EVIDENCE/release"
+      - name: Build desktop engine embedded in the candidate
+        env:
+          MACOSX_DEPLOYMENT_TARGET: '11.0'
+        run: |
+          toolchain=$(sed -n 's/^channel *= *"\(.*\)"/\1/p' rust-toolchain.toml)
+          rustup toolchain install "$toolchain" --profile minimal
+          rustup default "$toolchain"
+          rustup target add aarch64-apple-darwin
+          cargo build --release -p senpi-desktop-engine --locked --target aarch64-apple-darwin
+      - name: Build exact candidate standalone omo
+        run: |
+          version=$(jq -r .version packages/omo-native/package.json)
+          bun script/build-omo-binary.ts --target darwin-arm64 --omo-version "$version" --omo-ai-version "$version" --out-dir "$RUNNER_TEMP/omo-candidate"
+          shasum -a 256 "$RUNNER_TEMP/omo-candidate/omo-darwin-arm64" > "$QA_EVIDENCE/candidate-provenance.txt"
+      - name: Exact candidate versus R0 lifecycle matrix
+        continue-on-error: true
+        id: candidate
+        run: |
+          node packages/omo-senpi/scripts/qa/task-host-e2e-shards.mjs --only rollback,index --bin "$RUNNER_TEMP/omo-candidate/omo-darwin-arm64" --before-bin "$RUNNER_TEMP/omo-v5.1.0/omo-darwin-arm64" --out "$QA_EVIDENCE/candidate"
+      - name: Publish isolated official fixture evidence
+        if: always() && env.QA_EVIDENCE != ''
+        uses: actions/upload-artifact@v6
+        with:
+          name: issue-9576-official-lifecycle-${{ github.sha }}
+          path: ${{ env.QA_EVIDENCE }}
+          retention-days: 7
+      - name: Require both actual lifecycle results
+        if: always()
+        env:
+          RELEASE_OUTCOME: ${{ steps.release.outcome }}
+          CANDIDATE_OUTCOME: ${{ steps.candidate.outcome }}
+        run: |
+          test "$RELEASE_OUTCOME" = success
+          test "$CANDIDATE_OUTCOME" = success
