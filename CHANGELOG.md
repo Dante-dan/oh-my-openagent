@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+**Daemon-hosted background tasks keep running when their parent exits or starts a new session.** The parent detaches without aborting their turns. On `/new` or exit, one notice names the old session and the `omo --resume` command to collect results; children stay owned by that session. Local in-process and stdio children retain their shutdown behavior. ([#8517](https://github.com/code-yeongyu/oh-my-openagent/issues/8517), [#10018](https://github.com/code-yeongyu/oh-my-openagent/issues/10018))
+
 **A child that stops answering no longer hangs a task indefinitely.** Stdio RPC requests have deadlines, and both process runners keep one heartbeat in flight. Three missed ten-second probes end a running child as `child-unresponsive`, preserve its transcript, and name how to inspect and rerun it in `task_output`. The last successful heartbeat appears as `last_seen_at` in the live task snapshot. ([#10017](https://github.com/code-yeongyu/oh-my-openagent/issues/10017))
 
 **Resuming a background task no longer waits for a free slot.** When its concurrency group is full, resuming a finished background task now returns at once as pending and sends the follow-up when a slot frees, instead of blocking the call. A second resume of the same task while one is queued is refused, cancelling a queued resume releases nothing it didn't hold, and a fallback retry keeps the latest follow-up prompt. Thanks to @imadal1n. ([#9985](https://github.com/code-yeongyu/oh-my-openagent/pull/9985))
@@ -20,7 +22,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 **Mass research plans its whole collection before it starts instead of one wave at a time.** `mass ulw research` now defines every angle as a harvest, expand and verify chain that passes its findings to the next step through a file, so a fast angle reaches verification while slow ones are still harvesting, and leads that are still open join each cluster of angles as soon as that cluster settles. The mass-ulw and ulw-execute skills no longer say a single node's completion wakes the session; only a finished or paused run does. ([#10049](https://github.com/code-yeongyu/oh-my-openagent/issues/10049))
 
 ## [5.1.32] - 2026-10-12
-
 
 **5.1.32 is the release that 5.1.31 was meant to be: 5.1.31 never reached npm.** Two checks in the release pipeline stopped it before any package was published, one on the macOS Intel desktop engine and one on the Linux musl builds. omo itself did not change between the two, so every entry below is new to anyone upgrading from 5.1.30. The notarization check now waits for Apple's ticket to reach Gatekeeper, and the musl smoke no longer reports an exited host supervisor as a leak. ([#10081](https://github.com/code-yeongyu/oh-my-openagent/pull/10081), [#10082](https://github.com/code-yeongyu/oh-my-openagent/pull/10082))
 
