@@ -35,12 +35,13 @@ import { isAlive, killTree } from "./task-e2e-process.mjs"
 import { seedTaskProvider, seededTaskSandboxes } from "./task-provider-sandbox.mjs"
 import { cleanupTaskHosts, taskVerdictExitCode } from "./task-e2e-host-cleanup.mjs"
 import { runTaskResumeScenarios } from "./task-resume-e2e.mjs"
+import { readTaskRecords, childSessionText } from "./resume-e2e-runtime.mjs"
 import { isolatedChildEnv, sandboxStateDir } from "./sandbox-child-env.mjs"
 
 const scriptDir = dirname(fileURLToPath(import.meta.url))
 const mockProviderEntry = join(scriptDir, "task-e2e-mock-provider.ts")
 const realSenpiAgentDir = join(homedir(), ".senpi", "agent")
-const OMO_CONFIG = { categories: { mockcat: { description: "Local mock category pinned to the mock provider.", model: "omo-mock/mock-1" } } }
+const OMO_CONFIG = { task: { default_execution_mode: "process", process_runner: "host" }, categories: { mockcat: { description: "Local mock category pinned to the mock provider.", model: "omo-mock/mock-1" } } }
 
 function findOnPath(bin) {
   if (bin.includes("/")) return existsSync(bin) ? bin : null
@@ -105,9 +106,17 @@ function markerCount(markerLog) {
   return readFileSync(markerLog, "utf8").trim().split(/\r?\n/).filter((line) => line.length > 0).length
 }
 
+function captureProcessLane(scenario, name, checks, capture) {
+  const records = readTaskRecords(scenario.sandbox)
+  capture[`${name}ProcessRecords`] = records.map((record) => ({ task_id: record.task_id, execution_mode: record.execution_mode, runner_kind: record.runner_kind, pid: record.pid, host_pid: record.host_pid, status: record.status }))
+  capture[`${name}ChildSessions`] = records.map((record) => childSessionText(scenario.sandbox, record.task_id)).join("\n")
+  checks[`${name}_process_mode`] = records.length > 0 && records.every((record) => record.execution_mode === "process" && record.runner_kind === "host-session") ? "PASS" : "FAIL"
+}
+
 function runMainFlow(senpiBin, checks, capture, pids) {
   const scenario = seedScenario(MAIN_SCRIPT, { withMarker: true })
   const { run, events } = driveSenpi(senpiBin, scenario, "spawn a background child, keep working, then follow up and read its output", pids)
+  captureProcessLane(scenario, "main", checks, capture)
   capture.main = { exit: run.status, signal: run.signal ?? null, stateDir: scenario.stateDir }
   const taskId = readStoreTaskIds(scenario.stateDir)[0]
   const jsonl = taskId === undefined ? "" : readStoreJsonl(scenario.stateDir, taskId)
@@ -131,6 +140,7 @@ function runMainFlow(senpiBin, checks, capture, pids) {
 function runBatchFlow(senpiBin, checks, capture, pids) {
   const scenario = seedScenario(BATCH_SCRIPT)
   const { run, events } = driveSenpi(senpiBin, scenario, "fan out two synchronous child tasks", pids)
+  captureProcessLane(scenario, "batch", checks, capture)
   const taskIds = readStoreTaskIds(scenario.stateDir)
   const items = findBatchFanout(events, 2)
   capture.batchStdout = run.stdout ?? ""
@@ -141,6 +151,7 @@ function runBatchFlow(senpiBin, checks, capture, pids) {
 function runSyncFlow(senpiBin, checks, capture, pids) {
   const scenario = seedScenario(SYNC_SCRIPT)
   const { run, events } = driveSenpi(senpiBin, scenario, "run a synchronous task and return its answer", pids)
+  captureProcessLane(scenario, "sync", checks, capture)
   capture.syncStdout = run.stdout ?? ""
   const inline = findInlineFinal(events, SYNC_FINAL)
   const noNotification = !JSON.stringify(events).includes("task completion")
@@ -230,6 +241,10 @@ async function main() {
 function writeEvidenceMaybe(outDir, capture, payload) {
   if (outDir === undefined) return
   mkdirSync(outDir, { recursive: true })
+  for (const name of ["main", "batch", "sync"]) {
+    writeFileSync(join(outDir, `${name}.process-records.json`), `${JSON.stringify(capture[`${name}ProcessRecords`] ?? [], null, 2)}\n`)
+    writeFileSync(join(outDir, `${name}.child-sessions.jsonl`), capture[`${name}ChildSessions`] ?? "")
+  }
   writeFileSync(join(outDir, "verdict.json"), `${JSON.stringify(payload, null, 2)}\n`)
   writeFileSync(join(outDir, "main.stdout.json.log"), capture.mainStdout ?? "")
   writeFileSync(join(outDir, "main.stderr.log"), capture.mainStderr ?? "")
