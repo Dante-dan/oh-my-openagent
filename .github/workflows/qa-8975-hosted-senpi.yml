@@ -58,6 +58,7 @@ jobs:
       - name: Official task process lanes and missing-host-provider control
         if: ${{ !cancelled() }}
         run: |
+          set +e
           set -uo pipefail
           failed=0
           for lane in missing-host-provider process; do
