@@ -21,7 +21,9 @@ export function launchRpc(command, sandbox, env) {
   })
   const exited = new Promise((resolvePromise) => {
     child.once("error", (error) => { stderr += `${error.message}\n`; resolvePromise({ code: null, signal: null }) })
-    child.once("close", (code, signal) => resolvePromise({ code, signal }))
+    // A detached task host can retain these pipes after the parent has exited.
+    // Parent termination and host cleanup are separate evidence boundaries.
+    child.once("exit", (code, signal) => resolvePromise({ code, signal }))
   })
   child.stdin.on("error", (error) => { stderr += `${error.message}\n` })
   const waitFrom = (from, predicate, timeoutMs, label) => {
@@ -48,6 +50,18 @@ export function launchRpc(command, sandbox, env) {
 }
 
 export async function teardown(session) {
+  try {
+    return await teardownParent(session)
+  } finally {
+    // The parent no longer needs its transport after teardown. Close our pipe ends
+    // so an inherited daemon descriptor cannot keep this driver alive indefinitely.
+    session.child.stdin.destroy()
+    session.child.stdout.destroy()
+    session.child.stderr.destroy()
+  }
+}
+
+async function teardownParent(session) {
   const { child } = session
   if (child.exitCode !== null || child.signalCode !== null) return `pid ${child.pid} already exited`
   try { session.send({ type: "abort" }) } catch { /* stdin already closed */ }
