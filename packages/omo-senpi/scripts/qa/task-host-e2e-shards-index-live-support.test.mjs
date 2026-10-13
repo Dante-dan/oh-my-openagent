@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 
-import { storeIndexPreconditionPassed } from "./task-host-e2e-shards-index-live-support.mjs"
+import { crossEndpointHazardPassed, storeIndexPreconditionPassed } from "./task-host-e2e-shards-index-live-support.mjs"
 
 const passing = {
   atomic_index_write_failure: { failed: true },
@@ -36,5 +36,18 @@ describe("store index registration precondition verdict", () => {
 
   test("#given a failed spawn that already left an endpoint #when judged #then the row fails", () => {
     expect(Boolean(storeIndexPreconditionPassed({ ...passing, endpoints_before_retry: ["p-0.sock"] }))).toBe(false)
+  })
+})
+
+
+describe("cross-endpoint transcript ownership verdict", () => {
+  const guarded = { shard_open_accepted: true, rpc_open_rejected: true,
+    live_holders: [{ pid: 123 }], distinct_endpoints: true, disposable_copy_removed: true }
+  test("#given a typed refusal naming the holder #when judged #then the ownership guard passes", () => {
+    expect(Boolean(crossEndpointHazardPassed(guarded))).toBe(true)
+  })
+  test("#given a duplicate admission or no holder #when judged #then the ownership guard fails", () => {
+    expect(Boolean(crossEndpointHazardPassed({ ...guarded, rpc_open_rejected: false }))).toBe(false)
+    expect(Boolean(crossEndpointHazardPassed({ ...guarded, live_holders: [] }))).toBe(false)
   })
 })

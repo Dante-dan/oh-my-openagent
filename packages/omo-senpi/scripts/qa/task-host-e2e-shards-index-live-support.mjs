@@ -74,7 +74,8 @@ export function observeRegistrationBeforeEndpoint(sandbox, indexPath, endpointSt
 }
 
 export const crossEndpointHazardPassed = (value) =>
-  value.shard_open_accepted && value.rpc_open_accepted && value.distinct_endpoints && value.disposable_copy_removed
+  value.shard_open_accepted && value.rpc_open_rejected && value.live_holders?.some((holder) =>
+    Number.isInteger(holder.pid) && holder.pid > 0) && value.distinct_endpoints && value.disposable_copy_removed
 
 export const idleGcIndexResumePassed = (value) =>
   value.parent_quit_while_request_held && value.supervisor_exited &&

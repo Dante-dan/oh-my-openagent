@@ -38,6 +38,8 @@ export async function runCrossEndpointOpenHazard(current, artifacts) {
     rpcClient = await HostClient.connect(rpc, "hazard-rpc")
     const params = { cwd: duplicate, sessionPath, kind: "interactive", context: { role: "interactive" }, provider: "omo-mock", modelId: "mock-1" }
     const first = await shardClient.openSession(params)
+    facts = { same_session_path: sessionPath, shard_socket: shard, rpc_socket: rpc,
+      shard_open_accepted: typeof first.routingId === "string", distinct_endpoints: shard !== rpc }
     const second = await rpcClient.openSession(params)
     facts = {
       same_session_path: sessionPath,
@@ -49,7 +51,12 @@ export async function runCrossEndpointOpenHazard(current, artifacts) {
       guarded_hazard: "reservations are per endpoint; rollback must quiesce before reopening",
     }
   } catch (caught) {
-    error = String(caught?.stack ?? caught)
+    const response = rpcClient?.records.findLast((row) => row.type === "response" && row.command === "open_session")
+    facts.rpc_open_rejected = response?.success === false && response.errorCode === "session_held"
+    facts.live_holders = response?.errorData?.holders ?? []
+    // Current engines hold the transcript across endpoints; a typed refusal is the safety proof.
+    if (!facts.rpc_open_rejected) error = String(caught?.stack ?? caught)
+    facts.rpc_responses = rpcClient?.records.filter((row) => row.type === "response") ?? []
   } finally {
     shardClient?.close()
     rpcClient?.close()
@@ -133,10 +140,13 @@ export async function runIdleGcIndexResume(current, beforeBin, artifacts) {
     const migrated = taskRecords(project).find((entry) => entry.task_id === running.task_id)
     const r0 = { ...sandbox, bin: beforeBin }
     const provisioned = runBin(r0, ["--version"], { timeoutMs: 300_000 })
-    const omoConfigPath = join(sandbox.agentDir, "omo.json")
-    const r0Config = JSON.parse(readFileSync(omoConfigPath, "utf8"))
-    delete r0Config.task?.host_idle_exit_ms
-    writeFileSync(omoConfigPath, `${JSON.stringify(r0Config, null, 2)}\n`)
+    // writeOmoConfig seeds both scopes; the older parent also reads project configuration.
+    for (const omoConfigPath of [join(sandbox.agentDir, "omo.json"), join(project.cwd, ".omo", "omo.json")]) {
+      const r0Config = JSON.parse(readFileSync(omoConfigPath, "utf8"))
+      delete r0Config.task?.host_idle_exit_ms
+      r0Config.task.state_dir = project.stateDir
+      writeFileSync(omoConfigPath, `${JSON.stringify(r0Config, null, 2)}\n`)
+    }
     resumeProvider = startMockCompletionsServer({
       steps: [{ type: "text", text: "R0 continuation complete" }],
       requestLogPath: join(project.cwd, ".omo", "r0-http-requests.jsonl"),
@@ -158,6 +168,9 @@ export async function runIdleGcIndexResume(current, beforeBin, artifacts) {
       },
       timeoutMs: 180_000,
     })
+    const parentDiagnostics = { requested_session: join(sandbox.sessionDir, parentSessionName),
+      stdout: resumed.chunks.stdout, stderr: resumed.chunks.stderr,
+      task_records: taskRecords(project) }
     await stopParent(resumed)
     resumed = undefined
     const indexAfterGc = JSON.parse(readFileSync(indexPath, "utf8"))
@@ -190,6 +203,7 @@ export async function runIdleGcIndexResume(current, beforeBin, artifacts) {
       r0_daemon_exit: daemon.status,
       r0_resume_completed: resumedRecord?.status === "completed",
       continuation_count: userTurnsAfterR0 - userTurnsBeforeR0,
+      parent_diagnostics: parentDiagnostics,
     }
   } catch (caught) {
     error = String(caught?.stack ?? caught)
