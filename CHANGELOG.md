@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+**A child that stops answering no longer hangs a task indefinitely.** Stdio RPC requests have deadlines, and both process runners keep one heartbeat in flight. Three missed ten-second probes end a running child as `child-unresponsive`, preserve its transcript, and name how to inspect and rerun it in `task_output`. The last successful heartbeat appears as `last_seen_at` in the live task snapshot. ([#10017](https://github.com/code-yeongyu/oh-my-openagent/issues/10017))
+
 **Resuming a background task no longer waits for a free slot.** When its concurrency group is full, resuming a finished background task now returns at once as pending and sends the follow-up when a slot frees, instead of blocking the call. A second resume of the same task while one is queued is refused, cancelling a queued resume releases nothing it didn't hold, and a fallback retry keeps the latest follow-up prompt. Thanks to @imadal1n. ([#9985](https://github.com/code-yeongyu/oh-my-openagent/pull/9985))
 
 **A task child started as its own process never receives its fallback chain after its first prompt.** When the engine answered the capability check only after the chain deadline, the runner still sent `set_retry_fallback` once the first prompt was already out; it now drops the chain at the deadline, and the child keeps the manager's fallback with the usual "no answer" warning. This was the intermittent windows-latest test failure. ([#9582](https://github.com/code-yeongyu/oh-my-openagent/issues/9582), [#10087](https://github.com/code-yeongyu/oh-my-openagent/pull/10087))
