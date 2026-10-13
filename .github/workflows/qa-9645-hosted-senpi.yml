@@ -1,0 +1,99 @@
+name: Fork QA 9645 official Senpi
+on:
+  push:
+    branches: [qa/9645-hosted-senpi-20261013]
+permissions:
+  contents: read
+jobs:
+  official-qa:
+    if: github.repository == 'Dante-dan/oh-my-openagent'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 120
+    env:
+      SENPI_RUNTIME: bun
+      OMO_SENPI_DISABLE_POSTHOG: '1'
+      PI_TELEMETRY: '0'
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24.12.0
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - name: Resolve canonical evidence and install pinned dependencies
+        run: |
+          set -euo pipefail
+          ev="$(node .agents/skills/senpi-qa/scripts/resolve-evidence-dir.mjs --repo-root "$GITHUB_WORKSPACE" --slug 20261013-9645-hosted)"
+          mkdir -p "$ev"
+          echo "QA_EVIDENCE=$ev" >> "$GITHUB_ENV"
+          git rev-parse HEAD > "$ev/tested-head.txt"
+          node --version > "$ev/node-version.txt"
+          bun --version > "$ev/bun-version.txt"
+          bun install --frozen-lockfile --ignore-scripts 2>&1 | tee "$ev/install.log"
+          echo "SENPI_BIN=$GITHUB_WORKSPACE/node_modules/.bin/senpi" >> "$GITHUB_ENV"
+      - name: Real official process identity
+        run: |
+          set -euo pipefail
+          node --input-type=module -e 'import {readProcessIdentity} from "./node_modules/@code-yeongyu/senpi/dist/modes/app-server/daemon/process.js"; console.log(JSON.stringify(await readProcessIdentity(process.pid)))' > "$QA_EVIDENCE/official-process-identity.json"
+      - name: Build official plugin
+        run: |
+          set -euo pipefail
+          bun run build:senpi-plugin 2>&1 | tee "$QA_EVIDENCE/build.log"
+      - name: Official isolation harness self-test
+        if: ${{ !cancelled() }}
+        run: |
+          set -euo pipefail
+          node packages/omo-senpi/scripts/qa/drive.mjs --self-test 2>&1 | tee "$QA_EVIDENCE/drive-self-test.log"
+      - name: Official adapter and isolation receipt
+        if: ${{ !cancelled() }}
+        run: |
+          set -euo pipefail
+          node packages/omo-senpi/scripts/qa/drive.mjs > "$QA_EVIDENCE/adapter-live-result.json"
+          cat "$QA_EVIDENCE/adapter-live-result.json"
+      - name: Official task summary routes
+        if: ${{ !cancelled() }}
+        run: |
+          set -uo pipefail
+          failed=0
+          for lane in in-process child-process host; do
+            mkdir -p "$QA_EVIDENCE/$lane"
+            if [ "$lane" = in-process ]; then mode=in-process; runner=child-process; else mode=process; runner="$lane"; fi
+            TASK_SUMMARY_E2E_EXECUTION_MODE="$mode" TASK_SUMMARY_E2E_PROCESS_RUNNER="$runner" TASK_SUMMARY_E2E_OUT_DIR="$QA_EVIDENCE/$lane" node packages/omo-senpi/scripts/qa/task-summary-e2e.mjs > "$QA_EVIDENCE/$lane/driver.log" 2>&1
+            status=$?
+            echo "$status" > "$QA_EVIDENCE/$lane/exit.txt"
+            if [ "$status" != 0 ]; then failed=1; fi
+          done
+          exit "$failed"
+      - name: Required adapter typecheck
+        if: ${{ !cancelled() }}
+        run: |
+          set -euo pipefail
+          bunx --no-install tsgo --noEmit -p packages/omo-senpi/tsconfig.json 2>&1 | tee "$QA_EVIDENCE/typecheck.log"
+      - name: Required full Senpi package gate
+        if: ${{ !cancelled() }}
+        run: |
+          set -euo pipefail
+          bun run test:senpi 2>&1 | tee "$QA_EVIDENCE/package-gate.log"
+      - name: Required task package tests
+        if: ${{ !cancelled() }}
+        run: |
+          set -euo pipefail
+          bun test packages/senpi-task 2>&1 | tee "$QA_EVIDENCE/task-package.log"
+      - name: Evidence digest and cleanup identity inventory
+        if: always()
+        run: |
+          set -euo pipefail
+          ps -axo pid=,ppid=,pgid=,command= | grep -E '[s]enpi|[o]mo-senpi' > "$QA_EVIDENCE/process-cleanup-inventory.txt" || true
+          node --input-type=module -e 'import {readdirSync,readFileSync,writeFileSync} from "node:fs"; import {join,relative} from "node:path"; import {createHash} from "node:crypto"; const root=process.env.QA_EVIDENCE; const files=[]; function walk(d){for(const e of readdirSync(d,{withFileTypes:true})){const p=join(d,e.name);if(e.isDirectory())walk(p);else files.push({path:relative(root,p),sha256:createHash("sha256").update(readFileSync(p)).digest("hex")})}}walk(root);writeFileSync(join(root,"artifact-hashes.json"),JSON.stringify(files,null,2)+"\n")'
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: qa-9645-${{ matrix.os }}-${{ github.sha }}
+          path: .omo/evidence/omo-senpi-adapter/20261013-9645-hosted/
+          include-hidden-files: true
+          retention-days: 7
