@@ -32,13 +32,16 @@ import {
   SYNC_SCRIPT,
 } from "./task-e2e-scenarios.mjs"
 import { isAlive, killTree } from "./task-e2e-process.mjs"
+import { seedTaskProvider, seededTaskSandboxes } from "./task-provider-sandbox.mjs"
+import { cleanupTaskHosts, taskVerdictExitCode } from "./task-e2e-host-cleanup.mjs"
 import { runTaskResumeScenarios } from "./task-resume-e2e.mjs"
+import { readTaskRecords, childSessionText } from "./resume-e2e-runtime.mjs"
 import { isolatedChildEnv, sandboxStateDir } from "./sandbox-child-env.mjs"
 
 const scriptDir = dirname(fileURLToPath(import.meta.url))
 const mockProviderEntry = join(scriptDir, "task-e2e-mock-provider.ts")
 const realSenpiAgentDir = join(homedir(), ".senpi", "agent")
-const OMO_CONFIG = { categories: { mockcat: { description: "Local mock category pinned to the mock provider.", model: "omo-mock/mock-1" } } }
+const OMO_CONFIG = { task: { default_execution_mode: "process", process_runner: "host" }, categories: { mockcat: { description: "Local mock category pinned to the mock provider.", model: "omo-mock/mock-1" } } }
 
 function findOnPath(bin) {
   if (bin.includes("/")) return existsSync(bin) ? bin : null
@@ -52,6 +55,7 @@ function findOnPath(bin) {
 function seedScenario(script, { withMarker } = {}) {
   const sandbox = createSandbox()
   seedSandbox(sandbox)
+  seedTaskProvider(sandbox, mockProviderEntry)
   const sessionDir = join(sandbox.root, "sessions")
   mkdirSync(sessionDir, { recursive: true })
   const omoDir = join(sandbox.cwd, ".omo")
@@ -102,9 +106,17 @@ function markerCount(markerLog) {
   return readFileSync(markerLog, "utf8").trim().split(/\r?\n/).filter((line) => line.length > 0).length
 }
 
+function captureProcessLane(scenario, name, checks, capture) {
+  const records = readTaskRecords(scenario.sandbox)
+  capture[`${name}ProcessRecords`] = records.map((record) => ({ task_id: record.task_id, execution_mode: record.execution_mode, runner_kind: record.runner_kind, pid: record.pid, host_pid: record.host_pid, status: record.status }))
+  capture[`${name}ChildSessions`] = records.map((record) => childSessionText(scenario.sandbox, record.task_id)).join("\n")
+  checks[`${name}_process_mode`] = records.length > 0 && records.every((record) => record.execution_mode === "process" && record.runner_kind === "host-session") ? "PASS" : "FAIL"
+}
+
 function runMainFlow(senpiBin, checks, capture, pids) {
   const scenario = seedScenario(MAIN_SCRIPT, { withMarker: true })
   const { run, events } = driveSenpi(senpiBin, scenario, "spawn a background child, keep working, then follow up and read its output", pids)
+  captureProcessLane(scenario, "main", checks, capture)
   capture.main = { exit: run.status, signal: run.signal ?? null, stateDir: scenario.stateDir }
   const taskId = readStoreTaskIds(scenario.stateDir)[0]
   const jsonl = taskId === undefined ? "" : readStoreJsonl(scenario.stateDir, taskId)
@@ -128,6 +140,7 @@ function runMainFlow(senpiBin, checks, capture, pids) {
 function runBatchFlow(senpiBin, checks, capture, pids) {
   const scenario = seedScenario(BATCH_SCRIPT)
   const { run, events } = driveSenpi(senpiBin, scenario, "fan out two synchronous child tasks", pids)
+  captureProcessLane(scenario, "batch", checks, capture)
   const taskIds = readStoreTaskIds(scenario.stateDir)
   const items = findBatchFanout(events, 2)
   capture.batchStdout = run.stdout ?? ""
@@ -138,6 +151,7 @@ function runBatchFlow(senpiBin, checks, capture, pids) {
 function runSyncFlow(senpiBin, checks, capture, pids) {
   const scenario = seedScenario(SYNC_SCRIPT)
   const { run, events } = driveSenpi(senpiBin, scenario, "run a synchronous task and return its answer", pids)
+  captureProcessLane(scenario, "sync", checks, capture)
   capture.syncStdout = run.stdout ?? ""
   const inline = findInlineFinal(events, SYNC_FINAL)
   const noNotification = !JSON.stringify(events).includes("task completion")
@@ -162,6 +176,7 @@ async function main() {
   const senpiBin = findOnPath(process.env.SENPI_BIN?.trim() || "senpi")
   if (senpiBin === null) {
     console.log(JSON.stringify({ result: "SKIP", reason: "senpi-binary-unavailable", providedAgentDir }))
+    process.exitCode = taskVerdictExitCode("SKIP")
     return
   }
 
@@ -169,14 +184,20 @@ async function main() {
   const capture = {}
   const pids = []
   const sandboxes = []
+  const hostCleanup = []
   try {
     for (const runner of [runMainFlow, runBatchFlow, runSyncFlow, runNegativeFlow]) {
       sandboxes.push(runner(senpiBin, checks, capture, pids))
     }
     // Plan todo 22: quit->resume revival scenarios live in their own module (this driver is oversize).
     sandboxes.push(...await runTaskResumeScenarios({ senpiBin, checks, capture, pids, outDir }))
+  } catch (error) {
+    checks.driver_completed = "FAIL"
+    capture.driverError = error instanceof Error ? error.message : String(error)
   } finally {
+    for (const sandbox of seededTaskSandboxes) if (!sandboxes.includes(sandbox)) sandboxes.push(sandbox)
     for (const pid of pids) if (isAlive(pid)) killTree(pid)
+    for (const sandbox of sandboxes) hostCleanup.push(await cleanupTaskHosts(senpiBin, sandbox))
   }
 
   const leakedPids = pids.filter(isAlive).length
@@ -186,7 +207,7 @@ async function main() {
   const { qaAttributedPaths, concurrentSessionPaths } = classifyRealSenpiChanges(allChangedRealPaths, sandboxTokens)
   const realSenpiUntouched = qaAttributedPaths.length === 0
   checks.real_senpi_untouched = realSenpiUntouched ? "PASS" : "FAIL"
-  checks.no_leaked_pids = leakedPids === 0 ? "PASS" : "FAIL"
+  checks.no_leaked_pids = leakedPids === 0 && hostCleanup.every((receipt) => receipt.proven) ? "PASS" : "FAIL"
 
   const values = Object.values(checks)
   const result = values.length > 0 && values.every((verdict) => verdict === "PASS") ? "PASS" : "FAIL"
@@ -194,6 +215,7 @@ async function main() {
     result,
     checks,
     leakedPids,
+    hostCleanup,
     spawnedPids: pids,
     realSenpiUntouched,
     realSenpiChangedPaths: qaAttributedPaths,
@@ -208,15 +230,21 @@ async function main() {
     mainTaskId: capture.mainTaskId,
     mainSignatures: capture.mainSignatures,
     mainExit: capture.main?.exit,
+    driverError: capture.driverError,
     batchTaskIds: capture.batchTaskIds,
   }
   writeEvidenceMaybe(outDir, capture, payload)
   console.log(JSON.stringify(payload))
+  process.exitCode = taskVerdictExitCode(result)
 }
 
 function writeEvidenceMaybe(outDir, capture, payload) {
   if (outDir === undefined) return
   mkdirSync(outDir, { recursive: true })
+  for (const name of ["main", "batch", "sync"]) {
+    writeFileSync(join(outDir, `${name}.process-records.json`), `${JSON.stringify(capture[`${name}ProcessRecords`] ?? [], null, 2)}\n`)
+    writeFileSync(join(outDir, `${name}.child-sessions.jsonl`), capture[`${name}ChildSessions`] ?? "")
+  }
   writeFileSync(join(outDir, "verdict.json"), `${JSON.stringify(payload, null, 2)}\n`)
   writeFileSync(join(outDir, "main.stdout.json.log"), capture.mainStdout ?? "")
   writeFileSync(join(outDir, "main.stderr.log"), capture.mainStderr ?? "")

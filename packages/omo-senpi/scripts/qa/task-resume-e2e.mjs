@@ -12,6 +12,7 @@ import { fileURLToPath } from "node:url"
 import { createSandbox } from "./drive.mjs"
 import {
   childSessionHasAssistant,
+  readTaskRecords,
   childSessionText,
   findTaskByName,
   pollUntil,
@@ -90,6 +91,12 @@ async function runHappyLane(ctx) {
     (v) => v.midAssistant && v.finCompleted,
     POLL_MS,
   )
+  const records = readTaskRecords(sandbox)
+  ctx.checks.resume_process_mode = verdict(records.length >= 2 && records.every((record) => record.execution_mode === "process" && record.runner_kind === "host-session"))
+  if (ctx.outDir !== undefined) {
+    mkdirSync(ctx.outDir, { recursive: true })
+    writeFileSync(join(ctx.outDir, "resume.process-records.json"), `${JSON.stringify(records.map(({ task_id, execution_mode, runner_kind, pid, host_pid, status }) => ({ task_id, execution_mode, runner_kind, pid, host_pid, status })), null, 2)}\n`)
+  }
   writeFileSync(sentinel1, "go\n")
   const result1 = await run1.completion
   writeLaneLog(ctx, "resume-happy-run1", result1)
