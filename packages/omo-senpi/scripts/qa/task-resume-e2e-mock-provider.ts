@@ -145,7 +145,7 @@ export function routeChildStep(context: Context): MockStep {
     // model so the quit suspends a child that already owns a session file (never fresh-relaunch).
     return hasAssistant
       ? { type: "hang" }
-      : { type: "tool_call", name: "read", arguments: { path: "mock-script.json" } }
+      : { type: "tool_call", name: "eval", arguments: { language: "js", summary: "persist the child’s first assistant turn before interruption", code: 'console.log(await tool.read({ path: "mock-script.json" }));' } }
   }
   if (thread.includes("finished-child")) return { type: "text", text: FINISHED_CHILD_TOKEN }
   if (thread.includes("cancel-child")) return { type: "text", text: CANCEL_CHILD_TOKEN }

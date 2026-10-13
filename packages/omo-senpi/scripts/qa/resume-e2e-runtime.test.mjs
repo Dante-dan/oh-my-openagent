@@ -42,7 +42,7 @@ describe("routeChildStep", () => {
   test("#given the continuation nudge as the last user message #when routing #then the mid-turn child finishes", () => {
     const context = childContext([
       { role: "user", content: "midturn-child first unit" },
-      { role: "assistant", content: [{ type: "toolCall", name: "read" }] },
+      { role: "assistant", content: [{ type: "toolCall", name: "eval" }] },
       { role: "user", content: `Your previous turn was ${CONTINUATION_MARKER}. Resume.` },
     ])
     expect(routeChildStep(context)).toEqual({ type: "text", text: MIDTURN_CONTINUED_TOKEN })
@@ -61,13 +61,16 @@ describe("routeChildStep", () => {
 
   test("#given a mid-turn child prompt #when no assistant message exists #then turn one is an instant read", () => {
     const step = routeChildStep(childContext([{ role: "user", content: "midturn-child first unit" }]))
-    expect(step).toEqual({ type: "tool_call", name: "read", arguments: { path: "mock-script.json" } })
+    expect(step.type).toBe("tool_call")
+    expect(step.name).toBe("eval")
+    expect(step.arguments.language).toBe("js")
+    expect(step.arguments.code).toContain('await tool.read({ path: "mock-script.json" })')
   })
 
   test("#given a mid-turn child after its first tool result #when an assistant message exists #then it hangs mid-turn", () => {
     const context = childContext([
       { role: "user", content: "midturn-child first unit" },
-      { role: "assistant", content: [{ type: "toolCall", name: "read" }] },
+      { role: "assistant", content: [{ type: "toolCall", name: "eval" }] },
       { role: "toolResult", content: [{ type: "text", text: "file bytes" }] },
     ])
     expect(routeChildStep(context)).toEqual({ type: "hang" })

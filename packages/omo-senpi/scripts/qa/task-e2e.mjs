@@ -68,7 +68,7 @@ function seedScenario(script, { withMarker } = {}) {
     markerLog = join(sandbox.root, "marker-invocations.log")
     const extDir = join(sandbox.agentDir, "extensions")
     mkdirSync(extDir, { recursive: true })
-    writeFileSync(join(extDir, "marker.js"), `import { appendFileSync } from "node:fs"\nexport default function () { appendFileSync(${JSON.stringify(markerLog)}, "x\\n") }\n`)
+    writeFileSync(join(extDir, "marker.js"), `import { appendFileSync } from "node:fs"\nexport default function (pi) { pi.on("session_start", (_event, ctx) => { appendFileSync(${JSON.stringify(markerLog)}, JSON.stringify({ event: "session_start", pid: process.pid, sessionId: ctx.sessionManager.getSessionId() }) + "\\n") }) }\n`)
   }
   return { sandbox, sessionDir, markerLog, stateDir: sandboxStateDir(sandbox) }
 }
@@ -93,7 +93,7 @@ function driveSenpi(senpiBin, scenario, prompt, pids) {
 // parent session to receive its idle injection, so keep the real RPC transport open.
 async function driveBackgroundSenpi(senpiBin, scenario, prompt, pids) {
   const session = launchRpc(
-    { file: senpiBin, prefix: ["-e", mockProviderEntry] },
+    { file: senpiBin, prefix: ["-e", mockProviderEntry, "--omo-task-qa-parent"] },
     { cwd: scenario.sandbox.cwd, sessionsDir: scenario.sessionDir },
     { ...isolatedChildEnv(process.env, scenario.sandbox.agentDir), SENPI_CODING_AGENT_DIR: scenario.sandbox.agentDir, XDG_CONFIG_HOME: scenario.sandbox.xdgConfigHome, SENPI_CODING_AGENT_SESSION_DIR: scenario.sessionDir, OMO_SENPI_QA: "1" },
   )

@@ -128,6 +128,7 @@ interface MockProvider {
 }
 
 interface ExtensionAPI {
+  registerFlag?(name: string, options: { description: string; type: "boolean"; default: boolean }): void
   registerProvider(id: string, provider: MockProvider): void
   on?(event: string, handler: () => void): void
   sendMessage?(message: Record<string, unknown>, options?: Record<string, unknown>): void
@@ -152,6 +153,7 @@ function mockModel(id: string): MockModel {
 }
 
 export default function registerMockProvider(pi: ExtensionAPI): void {
+  pi.registerFlag?.("omo-task-qa-parent", { description: "Keep this RPC QA session on the parent script lane", type: "boolean", default: false })
   const script = loadMockScript(process.cwd())
   pi.registerProvider("omo-mock", {
     name: "omo mock provider",
@@ -201,6 +203,11 @@ export function messagesContainChild(context: Context): boolean {
   return false
 }
 
+// RPC is also a parent transport. Its lane flag stays in parent argv, never a child env selector.
+export function isChildContext(context: Context, argv = process.argv): boolean {
+  return messagesContainChild(context) || (argv.includes("rpc") && !argv.includes("--omo-task-qa-parent"))
+}
+
 export function stepToAssistantMessage(
   step: MockStep,
   callCount: number,
@@ -228,10 +235,8 @@ let childCallCount = 0
 function streamMockResponse(streamModel: Model<Api>, context: Context, options?: SimpleStreamOptions) {
   const stream = createLocalAssistantMessageEventStream()
   const script = loadMockScript(context.cwd ?? process.cwd())
-  // RPC children (--mode rpc) never see the in-process subagent identity line in their
-  // message context, so argv mode is the structural child signal; the identity line stays the
-  // in-process signal.
-  const isChild = messagesContainChild(context) || process.argv.includes("rpc")
+  // The explicitly flagged RPC parent must not consume the child sequence.
+  const isChild = isChildContext(context)
   if (isChild && script.failChildModels?.includes(streamModel.id)) {
     if (process.argv.includes("rpc")) {
       queueMicrotask(() => process.exit(42))
@@ -388,6 +393,9 @@ if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.a
     // given a parent context / when detected / then false
     const parentCtx: Context = { messages: [{ role: "user", content: "ulw parent prompt" }] }
     if (messagesContainChild(parentCtx)) throw new Error("parent must not detect child identity")
+    if (!isChildContext(parentCtx, ["senpi", "--mode", "rpc"])) throw new Error("unflagged RPC child must stay on child lane")
+    if (isChildContext(parentCtx, ["senpi", "--mode", "rpc", "--omo-task-qa-parent"])) throw new Error("flagged RPC parent must stay on parent lane")
+    if (!isChildContext(childCtx, ["senpi", "--mode", "rpc", "--omo-task-qa-parent"])) throw new Error("in-process child identity must override parent transport flag")
     console.log("SELF-TEST OK")
   }
 }
