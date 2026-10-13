@@ -92,7 +92,7 @@ async function runHappyLane(ctx) {
     POLL_MS,
   )
   const records = readTaskRecords(sandbox)
-  ctx.checks.resume_process_mode = verdict(records.length >= 2 && records.every((record) => record.execution_mode === "process" && record.runner_kind === "host-session"))
+  ctx.checks.resume_in_process_mode = verdict(records.length >= 2 && records.every((record) => record.execution_mode === "in-process"))
   if (ctx.outDir !== undefined) {
     mkdirSync(ctx.outDir, { recursive: true })
     writeFileSync(join(ctx.outDir, "resume.process-records.json"), `${JSON.stringify(records.map(({ task_id, execution_mode, runner_kind, pid, host_pid, status }) => ({ task_id, execution_mode, runner_kind, pid, host_pid, status })), null, 2)}\n`)

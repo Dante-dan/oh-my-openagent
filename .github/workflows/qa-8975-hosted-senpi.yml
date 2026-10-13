@@ -63,9 +63,11 @@ jobs:
           failed=0
           for lane in missing-host-provider process; do
             mkdir -p "$QA_EVIDENCE/$lane"
-            args=()
-            if [ "$lane" = missing-host-provider ]; then args=(--without-host-provider); fi
-            TASK_E2E_OUT_DIR="$QA_EVIDENCE/$lane" node packages/omo-senpi/scripts/qa/task-e2e.mjs "${args[@]}" > "$QA_EVIDENCE/$lane/driver.log" 2>&1
+            if [ "$lane" = missing-host-provider ]; then
+              TASK_E2E_OUT_DIR="$QA_EVIDENCE/$lane" node packages/omo-senpi/scripts/qa/task-e2e.mjs --without-host-provider > "$QA_EVIDENCE/$lane/driver.log" 2>&1
+            else
+              TASK_E2E_OUT_DIR="$QA_EVIDENCE/$lane" node packages/omo-senpi/scripts/qa/task-e2e.mjs > "$QA_EVIDENCE/$lane/driver.log" 2>&1
+            fi
             status=$?
             echo "$status" > "$QA_EVIDENCE/$lane/exit.txt"
             if [ "$lane" = process ]; then

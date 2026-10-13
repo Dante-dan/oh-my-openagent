@@ -37,6 +37,7 @@ import { cleanupTaskHosts, taskVerdictExitCode } from "./task-e2e-host-cleanup.m
 import { runTaskResumeScenarios } from "./task-resume-e2e.mjs"
 import { readTaskRecords, childSessionText } from "./resume-e2e-runtime.mjs"
 import { isolatedChildEnv, sandboxStateDir } from "./sandbox-child-env.mjs"
+import { launchRpc, teardown } from "./task-e2e-rpc-parent.mjs"
 
 const scriptDir = dirname(fileURLToPath(import.meta.url))
 const mockProviderEntry = join(scriptDir, "task-e2e-mock-provider.ts")
@@ -88,6 +89,30 @@ function driveSenpi(senpiBin, scenario, prompt, pids) {
   return { run, events: parseJsonEvents(run.stdout ?? "") }
 }
 
+// Print mode exits after the first parent turn. A background completion needs a live
+// parent session to receive its idle injection, so keep the real RPC transport open.
+async function driveBackgroundSenpi(senpiBin, scenario, prompt, pids) {
+  const session = launchRpc(
+    { file: senpiBin, prefix: ["-e", mockProviderEntry] },
+    { cwd: scenario.sandbox.cwd, sessionsDir: scenario.sessionDir },
+    { ...isolatedChildEnv(process.env, scenario.sandbox.agentDir), SENPI_CODING_AGENT_DIR: scenario.sandbox.agentDir, XDG_CONFIG_HOME: scenario.sandbox.xdgConfigHome, SENPI_CODING_AGENT_SESSION_DIR: scenario.sessionDir, OMO_SENPI_QA: "1" },
+  )
+  if (typeof session.pid === "number") pids.push(session.pid)
+  let stdout = ""
+  session.child.stdout.on("data", (chunk) => { stdout += chunk.toString() })
+  let failure
+  try {
+    session.send({ type: "prompt", message: prompt })
+    await session.waitFrom(0, (event) => event.type === "agent_end" && JSON.stringify(event).includes("parent peeked the child tail, all done"), 120_000, "background lifecycle terminal parent turn")
+  } catch (error) {
+    failure = error instanceof Error ? error.message : String(error)
+  } finally {
+    await teardown(session)
+  }
+  const exited = await session.exited
+  return { run: { status: failure === undefined ? exited.code : 1, signal: exited.signal, stdout, stderr: [session.stderr(), failure].filter(Boolean).join("\n") }, events: parseJsonEvents(stdout) }
+}
+
 function readStoreTaskIds(stateDir) {
   const tasksDir = join(stateDir, "tasks")
   if (!existsSync(tasksDir)) return []
@@ -113,9 +138,9 @@ function captureProcessLane(scenario, name, checks, capture) {
   checks[`${name}_process_mode`] = records.length > 0 && records.every((record) => record.execution_mode === "process" && record.runner_kind === "host-session") ? "PASS" : "FAIL"
 }
 
-function runMainFlow(senpiBin, checks, capture, pids) {
+async function runMainFlow(senpiBin, checks, capture, pids) {
   const scenario = seedScenario(MAIN_SCRIPT, { withMarker: true })
-  const { run, events } = driveSenpi(senpiBin, scenario, "spawn a background child, keep working, then follow up and read its output", pids)
+  const { run, events } = await driveBackgroundSenpi(senpiBin, scenario, "spawn a background child, keep working, then follow up and read its output", pids)
   captureProcessLane(scenario, "main", checks, capture)
   capture.main = { exit: run.status, signal: run.signal ?? null, stateDir: scenario.stateDir }
   const taskId = readStoreTaskIds(scenario.stateDir)[0]
@@ -187,7 +212,7 @@ async function main() {
   const hostCleanup = []
   try {
     for (const runner of [runMainFlow, runBatchFlow, runSyncFlow, runNegativeFlow]) {
-      sandboxes.push(runner(senpiBin, checks, capture, pids))
+      sandboxes.push(await runner(senpiBin, checks, capture, pids))
     }
     // Plan todo 22: quit->resume revival scenarios live in their own module (this driver is oversize).
     sandboxes.push(...await runTaskResumeScenarios({ senpiBin, checks, capture, pids, outDir }))

@@ -19,7 +19,7 @@ const spawnBackground = (prompt, name) => ({
 })
 
 export const RESUME_OMO_CONFIG = {
-  task: { default_execution_mode: "process", process_runner: "host" },
+  task: { default_execution_mode: "in-process" },
   categories: { mockcat: { description: "Local mock category pinned to the mock provider.", model: "omo-mock/mock-1" } },
 }
 
