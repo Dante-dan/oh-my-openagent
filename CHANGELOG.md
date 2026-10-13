@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+**Memory prompt compilation now starts on first use, not at startup.** Senpi's memory prompt compiler and its cache are built lazily when a session first binds to a memory identity, instead of being constructed during adapter registration. The generated main entry drops from 1,448,321 to 1,445,605 bytes (2,716 removed), and its ceiling drops from 1,487,000 to 1,484,000. Thanks to @Dante-dan. ([#9625](https://github.com/code-yeongyu/oh-my-openagent/pull/9625))
+
 **ulw-execute stops a checkpoint that keeps failing instead of retrying it for days.** After the same failure twice in a row, a third failed attempt, or four hours open, the checkpoint and every checkpoint that depends on it are marked blocked (`[~]`) with the gap left, recorded in the ledger and the final report, and the run moves on to the rest of the plan. A broken test harness gets one repair attempt, and work found while a checkpoint is open is queued after it unless it blocks that checkpoint. ([#10051](https://github.com/code-yeongyu/oh-my-openagent/issues/10051))
 
 ## [5.1.32] - 2026-10-12
