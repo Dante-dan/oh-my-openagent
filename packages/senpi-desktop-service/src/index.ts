@@ -27,7 +27,8 @@ export {
 	DesktopServiceError,
 	type DesktopServiceErrorCode,
 } from "./service/rpc-client";
-export { DesktopService, type DesktopServiceOptions, type DesktopSessionOpenParams } from "./service/service";
+export { DesktopService, type DesktopServiceOptions } from "./service/service";
+export type { DesktopSessionOpenParams } from "./service/session-state";
 export {
 	CAPABILITIES_TIMEOUT_MS,
 	CLOSE_TIMEOUT_MS,

@@ -46,9 +46,10 @@ export function createDesktopFacade(scope: RunScope) {
 	const root = new InputTarget(scope, "desktop", DESKTOP_METHODS);
 	return {
 		capabilities: (): Promise<DesktopCapabilities> =>
-			method("capabilities", async ({ call }) =>
-				expectResult("capabilities", await call("capabilities", {}), isDesktopCapabilities),
-			),
+			method("capabilities", async ({ call }) => {
+				const capabilities = expectResult("capabilities", await call("capabilities", {}), isDesktopCapabilities);
+				return { ...capabilities, cursorOverlay: capabilities.cursorOverlay ?? false };
+			}),
 		displays: (): Promise<readonly DesktopDisplay[]> =>
 			method("displays", async ({ call }) =>
 				expectResult("displays", await call("displays", {}), listOf(isDisplay)),

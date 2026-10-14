@@ -52,6 +52,14 @@ pub(crate) fn enumerate() -> CoreResult<Vec<DesktopWindow>> {
             elevated: None,
         });
     }
+    let helper_ids = match crate::focus::window_info() {
+        Ok(info) => Some(info.iter().filter(|w| w.cursor_overlay).map(|w| w.window_number).collect::<Vec<_>>()),
+        Err(error) => {
+            eprintln!("window list cannot identify cursor helpers; hiding every title match: {error}");
+            None
+        }
+    };
+    super::exclude_overlay_windows(&mut result, helper_ids.as_deref());
     Ok(result)
 }
 

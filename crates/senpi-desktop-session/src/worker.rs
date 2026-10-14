@@ -50,7 +50,10 @@ impl Worker {
         capabilities: Arc<Mutex<DesktopCapabilities>>,
         safety: SessionSafety,
     ) -> Self {
-        let backend = factory.create(&DesktopSessionOptions::default());
+        let backend = factory.create(&DesktopSessionOptions {
+            show_cursor: false,
+            ..DesktopSessionOptions::default()
+        });
         let mut worker = Self {
             factory,
             backend,
@@ -69,9 +72,24 @@ impl Worker {
         worker
     }
 
-    /// Re-creates the backend for the requested display; every earlier ref
-    /// and frame belongs to the previous backend and is dropped.
+    /// Applies cursor-only display changes in place; every other change
+    /// re-creates the backend and invalidates earlier refs and frames.
     pub(crate) fn open(&mut self, options: DesktopSessionOptions) -> DesktopCapabilities {
+        let cursor_only = self.options.as_ref().is_some_and(|current| {
+            if current.show_cursor == options.show_cursor {
+                return false;
+            }
+            let mut normalized = options.clone();
+            normalized.show_cursor = current.show_cursor;
+            normalized == *current
+        });
+        if cursor_only {
+            if let Ok(backend) = self.backend.as_mut() {
+                backend.set_show_cursor(options.show_cursor);
+            }
+            self.options = Some(options);
+            return self.refresh_capabilities();
+        }
         self.backend = self.factory.create(&options);
         self.registry = AxRegistry::default();
         self.frames = FrameCache::default();

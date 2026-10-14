@@ -91,6 +91,10 @@ pub trait Backend: Send {
     }
 
     fn capabilities(&mut self) -> DesktopCapabilities;
+
+    /// Updates the display-only virtual cursor without changing admission.
+    fn set_show_cursor(&mut self, _enabled: bool) {}
+
     fn displays(&mut self) -> CoreResult<Vec<DesktopDisplay>>;
     fn windows(&mut self) -> CoreResult<Vec<DesktopWindow>>;
     fn capture(&mut self, target: &Target, caps: &CaptureCaps) -> CoreResult<(RgbaImage, FrameGeometry)>;

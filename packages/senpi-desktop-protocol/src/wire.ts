@@ -41,7 +41,7 @@ export interface AuditEvent {
 	readonly keys?: readonly string[] | null;
 }
 
-/** Runtime truth about what this host's backend can do right now (frozen field set). */
+/** Runtime truth about what this host's backend can do right now. */
 export interface DesktopCapabilities {
 	readonly backend: string;
 	readonly displayServer?: string | null;
@@ -49,6 +49,7 @@ export interface DesktopCapabilities {
 	readonly input: boolean;
 	readonly ax: boolean;
 	readonly backgroundWindowInput: boolean;
+	readonly cursorOverlay: boolean;
 	readonly deliveryModes: readonly string[];
 	readonly capturePermission: string;
 	readonly inputPermission: string;

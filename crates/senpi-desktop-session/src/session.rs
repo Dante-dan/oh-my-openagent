@@ -99,7 +99,8 @@ impl Session {
         self.capabilities.lock().clone()
     }
 
-    /// Re-creates the backend for `options.display` and opens the session.
+    /// Opens or reconfigures the session. Cursor-only changes preserve the
+    /// backend, refs, frames, stop latch and control grant.
     /// The reply is [`Response::Capabilities`].
     pub fn open(&self, options: DesktopSessionOptions) -> Pending {
         self.enqueue(|reply| Message::Open { options, reply })

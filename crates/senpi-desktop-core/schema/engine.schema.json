@@ -615,6 +615,11 @@
             }
           ]
         },
+        "showCursor": {
+          "type": "boolean",
+          "description": "Display-only virtual cursor; never changes input admission.",
+          "default": true
+        },
         "allowHostRelayOnlyStop": {
           "type": "boolean",
           "description": "Accept a heartbeating host relay as the only stop path.",
@@ -768,6 +773,10 @@
         "backgroundWindowInput": {
           "type": "boolean"
         },
+        "cursorOverlay": {
+          "type": "boolean",
+          "description": "Whether the display-only virtual cursor is live now."
+        },
         "deliveryModes": {
           "type": "array",
           "items": {
@@ -820,6 +829,7 @@
         "input",
         "ax",
         "backgroundWindowInput",
+        "cursorOverlay",
         "deliveryModes",
         "capturePermission",
         "inputPermission",
@@ -829,7 +839,7 @@
         "stopPath",
         "screenLocked"
       ],
-      "description": "Runtime truth about what this host's backend can do right now.\n\nFROZEN field set (IS-2): later todos fill values, never add fields.",
+      "description": "Runtime truth about what this host's backend can do right now.\n\nSchema-backed field set; additions update Rust, generated schema and TS together.",
       "additionalProperties": false
     },
     "ControlGrantParams": {

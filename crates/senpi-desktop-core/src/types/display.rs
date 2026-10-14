@@ -95,7 +95,7 @@ impl DisplaySelector {
 
 /// Runtime truth about what this host's backend can do right now.
 ///
-/// FROZEN field set (IS-2): later todos fill values, never add fields.
+/// Schema-backed field set; additions update Rust, generated schema and TS together.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct DesktopCapabilities {
@@ -105,6 +105,8 @@ pub struct DesktopCapabilities {
     pub input: bool,
     pub ax: bool,
     pub background_window_input: bool,
+    /// Whether the display-only virtual cursor is live now.
+    pub cursor_overlay: bool,
     pub delivery_modes: Vec<String>,
     pub capture_permission: String,
     pub input_permission: String,
@@ -130,6 +132,7 @@ impl DesktopCapabilities {
             input: false,
             ax: false,
             background_window_input: false,
+            cursor_overlay: false,
             delivery_modes: Vec::new(),
             capture_permission: "unavailable".to_string(),
             input_permission: "unavailable".to_string(),

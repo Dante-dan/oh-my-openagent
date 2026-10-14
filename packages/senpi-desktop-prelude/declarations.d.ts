@@ -143,6 +143,8 @@ interface ComputerCapabilities {
 	ax: boolean;
 	/** Whether input can target a background window. */
 	backgroundWindowInput: boolean;
+	/** Whether the display-only virtual cursor is live now. */
+	cursorOverlay: boolean;
 	deliveryModes: string[];
 	capturePermission: string;
 	inputPermission: string;
