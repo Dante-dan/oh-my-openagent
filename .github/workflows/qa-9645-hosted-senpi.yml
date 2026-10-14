@@ -1,7 +1,7 @@
 name: Fork QA10107 dev-sync official Senpi
 on:
   push:
-    branches: [qa/10107-dev-sync-20261014]
+    branches: [qa/10107-generated-task-20261014]
 permissions:
   contents: read
 jobs:
@@ -44,6 +44,21 @@ jobs:
         run: |
           set -euo pipefail
           bun run build:senpi-plugin 2>&1 | tee "$QA_EVIDENCE/build.log"
+      - name: Verify and export generated task bundle
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          set -euo pipefail
+          node packages/omo-senpi/plugin/scripts/build-extension.mjs --check | tee "$QA_EVIDENCE/generated-freshness.log"
+          node packages/omo-senpi/plugin/scripts/build-install.mjs --check
+          mkdir -p "$QA_EVIDENCE/generated"
+          cp packages/omo-senpi/plugin/extensions/omo-task.js "$QA_EVIDENCE/generated/omo-task.js"
+          sha256sum "$QA_EVIDENCE/generated/omo-task.js" > "$QA_EVIDENCE/generated/sha256.txt"
+      - uses: actions/upload-artifact@v6
+        if: matrix.os == 'ubuntu-latest'
+        with:
+          name: generated-task-10107
+          path: .omo/evidence/omo-senpi-adapter/20261014-10107-dev-sync-hosted/generated/
+          include-hidden-files: true
       - name: Official isolation harness self-test
         if: ${{ !cancelled() }}
         run: |
