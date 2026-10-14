@@ -7,7 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-**Memory prompt compilation now starts on first use, not at startup.** Senpi's memory prompt compiler and its cache are built lazily when a session first binds to a memory identity, instead of being constructed during adapter registration. The generated main entry drops from 1,448,321 to 1,445,605 bytes (2,716 removed), and its ceiling drops from 1,487,000 to 1,484,000. Thanks to @Dante-dan. ([#9625](https://github.com/code-yeongyu/oh-my-openagent/pull/9625))
+**`omo app-server` is retired.** The Codex app-server protocol is gone from the engine, so omo no longer forwards `omo app-server`: it exits with status 2 and points to `omo --mode rpc` or `omo host`, which are the supported ways to drive a session from another program. `omo doctor`, the ulw-loop skill and the task status view no longer mention it. ([#10033](https://github.com/code-yeongyu/oh-my-openagent/issues/10033), [#10098](https://github.com/code-yeongyu/oh-my-openagent/pull/10098))
+
+**Memory prompt compilation now starts on first use, not at startup.** Senpi's memory prompt compiler and its cache are built lazily when a session first binds to a memory identity, instead of being constructed during adapter registration. The generated main entry is 1,532,303 bytes, 3,129 bytes below current dev, within the existing 1,546,000-byte ceiling. Thanks to @Dante-dan. ([#9625](https://github.com/code-yeongyu/oh-my-openagent/pull/9625))
 
 ## [5.1.33] - 2026-10-13
 
