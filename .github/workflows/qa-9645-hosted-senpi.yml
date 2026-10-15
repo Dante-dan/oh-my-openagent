@@ -1,7 +1,6 @@
 name: Fork QA10107 rebase official Senpi
 on:
-  push:
-    branches: [qa/10107-rebase-38c415a5-20261015]
+  workflow_dispatch:
 permissions:
   contents: read
 jobs:
