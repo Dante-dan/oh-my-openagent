@@ -116,6 +116,7 @@ export function buildManagedSpec(input: {
     : { ...spec.memberEnv, SENPI_TASK_MEMBER_TASK_ID: record.task_id }
   return {
     taskId: record.task_id,
+    sessionName: taskSessionName(record),
     cwd: spec.cwd ?? cwd,
     stateDir: join(stateDir, "children", record.task_id),
     prompt,
@@ -182,6 +183,7 @@ export function buildRespawnManagedSpec(record: TaskRecord, stateDir: string): B
     ok: true,
     spec: {
       taskId: record.task_id,
+      sessionName: taskSessionName(record),
       cwd: spawnSpec.cwd,
       stateDir: join(stateDir, "children", record.task_id),
       prompt: spawnSpec.prompt,
@@ -274,13 +276,14 @@ export function hasChildIdentity(identity: ChildIdentity): boolean {
 }
 
 // Fold the spawned child's own session id onto its record. External readers join a grandchild
-// session's parent_session_id back to this field. Empty/missing ids and already-terminal records
-// leave the record untouched so a settled task is never resurrected.
+// session's parent_session_id back to this field. A fast turn can settle before this fact arrives:
+// fill a missing terminal identity without changing its outcome or replacing an existing identity.
 export function recordSpawnedChildSession(
   record: TaskRecord,
   sessionId: string | undefined,
 ): TaskRecord | undefined {
-  if (sessionId === undefined || sessionId.length === 0 || isTerminalRecord(record)) return undefined
+  if (sessionId === undefined || sessionId.length === 0) return undefined
+  if (isTerminalRecord(record) && record.child_session_id !== undefined) return undefined
   return { ...record, child_session_id: sessionId }
 }
 
@@ -292,4 +295,10 @@ export function isTerminalRecord(record: TaskRecord): boolean {
     record.status === "interrupted" ||
     record.status === "lost"
   )
+}
+
+function taskSessionName(record: TaskRecord): string {
+  const title = (record.task_summary ?? record.description ?? record.name ?? record.task_id).replace(/\s+/g, " ").trim() || record.task_id
+  // The picker truncates names from the right; keep the complete parent identity visible.
+  return `task [${record.parent_session_id}]: ${title}`
 }

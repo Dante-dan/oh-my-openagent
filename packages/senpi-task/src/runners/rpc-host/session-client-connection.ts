@@ -149,6 +149,9 @@ export class HostSessionClient {
         return client.steer(command.message, undefined, { clientMessageId: command.clientMessageId }).then(ignoreHostDisposition)
       case "followUp":
         return client.followUp(command.message, undefined, { clientMessageId: command.clientMessageId }).then(ignoreHostDisposition)
+      case "set_session_name":
+        if (client.setSessionName === undefined) return Promise.reject(new Error("task host engine does not support session naming"))
+        return client.setSessionName(command.name)
       case "abort":
         return client.abort()
       default:

@@ -21,6 +21,7 @@ export type RpcSpawnSpec = {
 export type RpcRunnerSpec = {
   readonly taskStoreDir?: string
   readonly task_id: string
+  readonly session_name?: string
   readonly cwd: string
   readonly state_dir: string
   readonly prompt: string

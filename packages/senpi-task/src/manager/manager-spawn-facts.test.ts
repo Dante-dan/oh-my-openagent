@@ -71,12 +71,18 @@ describe("recordSpawnedChildSession", () => {
     expect(recordSpawnedChildSession(runningRecord(), "")).toBeUndefined()
   })
 
-  test("#given a record that already went terminal #when folded #then it is left untouched", () => {
-    // given a task that settled between start and the session-id write
-    const terminal = runningRecord({ status: "completed" })
+  test("#given a fast completed task without its session id #when the identity arrives #then only that fact is filled", () => {
+    const terminal = runningRecord({ status: "completed", final_response: "finished", terminal_at: "2026-07-07T00:00:01.000Z" })
+    expect(recordSpawnedChildSession(terminal, "01a0815e-child-session")).toEqual({
+      ...terminal,
+      child_session_id: "01a0815e-child-session",
+    })
+    expect(terminal.child_session_id).toBeUndefined()
+  })
 
-    // when / then a settled task is never resurrected
-    expect(recordSpawnedChildSession(terminal, "01a0815e-child-session")).toBeUndefined()
+  test("#given a terminal task with an established identity #when an old handle reports another #then the identity is preserved", () => {
+    const terminal = runningRecord({ status: "error", child_session_id: "current-session", error_message: "original failure" })
+    expect(recordSpawnedChildSession(terminal, "obsolete-session")).toBeUndefined()
   })
 })
 

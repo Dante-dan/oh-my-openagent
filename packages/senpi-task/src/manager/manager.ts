@@ -1226,7 +1226,7 @@ class TaskManagerImpl implements TaskManager {
   // Persist spawn-time facts onto the running record: OS pid (rpc children) and the child's own
   // session id (both modes) so task_output, session_start reconciliation, and external readers
   // (omo-desktop) can join a grandchild session back to this task. Pure folds live in
-  // recordSpawnedPid / recordSpawnedChildSession; already-terminal records are left untouched.
+  // recordSpawnedPid / recordSpawnedChildSession; a terminal record only accepts its missing session id.
   // One exit for every pre-launch refusal: the lease, the reserved name, the background flag and the
   // record's start/fail transitions are released together, so a refusal can never strand capacity.
   #failSpawn(input: {
@@ -1267,7 +1267,12 @@ class TaskManagerImpl implements TaskManager {
 
   #recordSpawnFacts(taskId: string, handle: ManagedChildHandle): void {
     const current = this.#tryLoad(taskId)
-    if (current === null || isTerminalRecord(current)) return
+    if (current === null) return
+    if (isTerminalRecord(current)) {
+      const withSession = recordSpawnedChildSession(current, handle.sessionId)
+      if (withSession !== undefined) this.#options.store.replace(withSession)
+      return
+    }
     const spawned = endFallbackHandoff(current)
     const withPid = recordSpawnedPid(spawned, handle.pid) ?? spawned
     const withRunner = recordSpawnedRunner(withPid, handle.kind, handle.hostSession) ?? withPid

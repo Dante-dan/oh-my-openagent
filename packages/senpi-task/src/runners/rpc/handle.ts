@@ -48,7 +48,9 @@ export type TrackedRpcChildHandle = RpcChildHandle & {
  * a get_state liveness heartbeat (records lastSeen only). terminate() delegates
  * to the single-writer terminate module.
  */
-export function createRpcChildHandle(options: CreateRpcChildHandleOptions): TrackedRpcChildHandle {
+export function createRpcChildHandle(options: CreateRpcChildHandleOptions): TrackedRpcChildHandle & {
+  initializeSessionIdentity(): Promise<void>
+} {
   const { client, child, taskId, heartbeatIntervalMs, now } = options
   const idleWaiters: Array<() => void> = []
   const outcomeWaiters: Array<(settled: RunnerOutcome) => void> = []
@@ -202,6 +204,11 @@ export function createRpcChildHandle(options: CreateRpcChildHandleOptions): Trac
   })
 
   return {
+    initializeSessionIdentity: async () => {
+      const response = await client.send({ type: "get_state" })
+      assertOk(response, "get_state")
+      sessionId = readSessionId(response) ?? sessionId
+    },
     reconcileInputs: inputEffects.reconcile,
     task_id: taskId,
     get sessionId() {

@@ -66,6 +66,7 @@ export function createRpcManagedRunner(runner: RpcRunnerLike): ManagedRunner {
     async start(spec: ManagedStartSpec): Promise<ManagedChildHandle> {
       const rpcSpec: RpcRunnerSpec = {
         task_id: spec.taskId,
+        ...(spec.sessionName === undefined ? {} : { session_name: spec.sessionName }),
         cwd: spec.cwd,
         state_dir: spec.stateDir,
         taskStoreDir: dirname(dirname(spec.stateDir)),
@@ -88,6 +89,7 @@ export function createRpcManagedRunner(runner: RpcRunnerLike): ManagedRunner {
 function toChildSpec(spec: ManagedStartSpec, context: InProcessSessionContext): ChildSpec {
   return {
     taskId: spec.taskId,
+    ...(spec.sessionName === undefined ? {} : { sessionName: spec.sessionName }),
     cwd: spec.cwd,
     // ManagedStartSpec.stateDir is already join(stateDir, "children", taskId); the session dir
     // nests sessions/<taskId>/ under it, identical to the rpc child's layout (spawn.ts).

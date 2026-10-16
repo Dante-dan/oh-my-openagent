@@ -27,6 +27,7 @@ export interface HostRpcClient {
   steer(message: string, images?: undefined, recovery?: { clientMessageId?: string }): Promise<HostQueuedInputDisposition>
   followUp(message: string, images?: undefined, recovery?: { clientMessageId?: string }): Promise<HostQueuedInputDisposition>
   abort(): Promise<void>
+  setSessionName?(name: string): Promise<void>
   getState(): Promise<RpcSessionState>
   getAvailableModels(): ReturnType<RpcClient["getAvailableModels"]>
   getEntries(since?: string): Promise<RpcEntriesResult>
