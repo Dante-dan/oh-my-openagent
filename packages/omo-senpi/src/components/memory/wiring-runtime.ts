@@ -33,6 +33,8 @@ export interface MemoryRuntimeWiring {
   journalWiringFor(identity: MemoryIdentityContext): MemoryJournalWiring
   factsWiringFor(identity: MemoryIdentityContext): MemoryFactsWiring
   runtimeFor(identity: MemoryIdentityContext): MemoryIdentityRuntime
+  /** Resolves once every reflection launch started by this wiring's runtimes has returned. */
+  settled(): Promise<void>
   triggerSessionFor(eventCtx: unknown): ReflectionTriggerSession | undefined
   dreamSessionById(sessionId: string): DreamTriggerSession | undefined
   dreamSessionFor(eventCtx: unknown): DreamTriggerSession | undefined
@@ -109,6 +111,7 @@ export function createMemoryRuntimeWiring(
       cwd: options.cwd(),
       loadConfig: () => options.loadConfig({ cwd: options.cwd() }),
       resolveModelRegistry,
+      resolveSessionModel,
       env: options.env,
       ...(options.logger === undefined ? {} : { logger: options.logger }),
     })
@@ -180,7 +183,7 @@ export function createMemoryRuntimeWiring(
           lastEventCtx.current = eventCtx
           const result = await runtime.store.evaluate(conversationId, event)
           if (result?.status === "active") {
-            runtime.launch(result.run)
+            void runtime.launch(result.run)
             await hooks.onLaunch?.(identity.identity, result.run)
           }
           return result
@@ -215,6 +218,9 @@ export function createMemoryRuntimeWiring(
     journalWiringFor,
     factsWiringFor,
     runtimeFor,
+    async settled(): Promise<void> {
+      await Promise.all([...runtimes.values()].map((runtime) => runtime.settled()))
+    },
     triggerSessionFor,
     dreamSessionById,
     dreamSessionFor,

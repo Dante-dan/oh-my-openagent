@@ -26,6 +26,11 @@ import type { DelegateFallbackEntry } from "@oh-my-opencode/delegate-core"
 //     covers the ChatGPT login there.
 export const CATEGORY_FALLBACK_CHAINS: Readonly<Record<string, readonly DelegateFallbackEntry[]>> = {
   "visual-engineering": [
+    // Argon at its lowest accepted thinking level leads (#10187, owner decision 2026-10-15):
+    // the catalog maps off/minimal to null for this model, so `low` is the floor. Copilot waits for
+    // code-yeongyu/senpi#3379 (its row exposes no thinking control). A pinned engine whose catalog
+    // has no Argon row leaves this rung unresolvable, so the chain behaves as before until adoption.
+    { providers: ["google", "google-vertex", "opencode"], model: "gemini-4-argon", variant: "low" },
     {
       providers: ["anthropic-subscription", "anthropic", "anthropic-api", "github-copilot", "opencode"],
       model: "claude-fable-5-1",
@@ -126,10 +131,15 @@ export const CATEGORY_FALLBACK_CHAINS: Readonly<Record<string, readonly Delegate
     },
     { providers: ["xiaomi", "opencode-go"], model: "mimo-v2.6-pro", variant: "high" },
     { providers: ["xai", "github-copilot", "opencode-go"], model: "grok-4.7", variant: "xhigh" },
+    // GLM 5.3 sits ahead of the GPT rungs so a Claude + Z.ai user does not fall from Sonnet to GPT (#10306).
+    { providers: ["zai", "zai-coding-cn", "opencode-go"], model: "glm-5.3", variant: "high" },
+    // GPT-6.1 Sol is the current GPT default, served only by the OpenAI lanes; GPT-5.6 Sol stays
+    // behind it so Copilot, OpenCode Zen and a registry without 6.1 still resolve the lane (#9844).
+    { providers: ["chatgpt-subscription", "openai"], model: "gpt-6.1-sol", variant: "medium" },
     {
       providers: ["chatgpt-subscription", "openai", "github-copilot", "opencode"],
-      model: "gpt-5.6-terra",
-      variant: "high",
+      model: "gpt-5.6-sol",
+      variant: "medium",
     },
     {
       providers: ["anthropic-subscription", "anthropic", "anthropic-api", "github-copilot", "opencode"],
@@ -158,6 +168,11 @@ export const CATEGORY_FALLBACK_CHAINS: Readonly<Record<string, readonly Delegate
     }
   ],
   writing: [
+    // Argon at its lowest accepted thinking level leads (#10187, owner decision 2026-10-15):
+    // the catalog maps off/minimal to null for this model, so `low` is the floor. Copilot waits for
+    // code-yeongyu/senpi#3379 (its row exposes no thinking control). A pinned engine whose catalog
+    // has no Argon row leaves this rung unresolvable, so the chain behaves as before until adoption.
+    { providers: ["google", "google-vertex", "opencode"], model: "gemini-4-argon", variant: "low" },
     {
       providers: ["anthropic-subscription", "anthropic", "anthropic-api", "github-copilot", "opencode"],
       model: "claude-opus-5-5",

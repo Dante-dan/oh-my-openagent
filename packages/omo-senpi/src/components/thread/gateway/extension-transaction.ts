@@ -1,6 +1,6 @@
 import { createGatewayEngine, type GatewayEngineOptions, type GatewayResolve } from "./engine"
 import { checkExtensionSchema, extensionSchema, extensionSql } from "./extension-sql"
-import { singleExtensionStatement } from "./extension-statement"
+import { orderByClause, orderByTerms, singleExtensionStatement } from "./extension-statement"
 import { createGatewayRelay, type GatewayRelayOptions } from "./relay"
 import * as ops from "./store-ops"
 import * as relay from "./store-relay-ops"
@@ -13,8 +13,18 @@ export class ExtensionTransactionEndedError extends Error {
   }
 }
 
+export class ExtensionTransactionBusyError extends Error {
+  readonly code = "extension_operation_failed"
+  constructor(readonly extension: string) {
+    super(`The ${extension} extension ran a statement while a tx helper (enqueue, bind, ...) was still in flight; await the helper first.`)
+  }
+}
+
 export function extensionTransaction(ctx: ops.StoreContext, name: string, now: number, resolveTarget: GatewayResolve) {
   let active = true
+  // Helpers that are running right now. A joined helper can hold a savepoint open across an await,
+  // so a statement run in that gap would land inside it and vanish with a data refusal's rollback.
+  let running = 0
   let cancelled = false
   let failure: unknown
   let tail = Promise.resolve()
@@ -28,12 +38,20 @@ export function extensionTransaction(ctx: ops.StoreContext, name: string, now: n
     return body()
   }
   function schedule<T>(body: () => Promise<T>): Promise<T> {
-    const next = active ? tail.then(() => joined(body)) : Promise.reject<T>(new ExtensionTransactionEndedError(name))
-    tail = next.then(() => undefined, (error: unknown) => { failure = error })
+    if (!active) return Promise.reject<T>(new ExtensionTransactionEndedError(name))
+    // In flight from the call until it settles, not from when its turn on `tail` comes.
+    running++
+    const next = tail.then(() => joined(body))
+    // Registered before the caller can await `next`, so the count drops before the caller resumes.
+    tail = next.then(() => { running-- }, (error: unknown) => { running--; failure = error })
     return next
   }
   function sql<T>(statement: string, body: () => T): T {
     checkActive()
+    if (running > 0) {
+      failure = new ExtensionTransactionBusyError(name)
+      throw failure
+    }
     const before = extensionSchema(ctx.sql)
     try {
       singleExtensionStatement(statement)
@@ -82,8 +100,12 @@ export function extensionTransaction(ctx: ops.StoreContext, name: string, now: n
   const tx: StoreExtensionTransaction = {
     all: (columns, statement, params, orderBy) => sql(statement, () => {
       for (const column of columns) singleExtensionStatement(column)
-      if (orderBy !== undefined) singleExtensionStatement(orderBy)
-      return ctx.sql.all(columns, statement, params, orderBy)
+      if (orderBy === undefined) return ctx.sql.all(columns, statement, params)
+      const terms = orderByTerms(orderBy)
+      // Pass the statement through the extension's authorizer (WHERE 0, so no rows) before its output columns are read
+      // without one, so an unknown-column refusal cannot reveal the shape of a table the extension may not read.
+      ctx.sql.all(["0"], `SELECT 0 FROM (${statement}\n) WHERE 0`, params)
+      return ctx.sql.all(columns, statement, params, orderByClause(terms, ctx.sql.resultColumns(statement)))
     }),
     one: (columns, statement, params) => sql(statement, () => {
       for (const column of columns) singleExtensionStatement(column)

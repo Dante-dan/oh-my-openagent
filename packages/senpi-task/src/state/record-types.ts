@@ -2,16 +2,21 @@ import type { DagTaskOwner } from "../dag/owner"
 import type { TaskStartFailureRecordFields } from "./start-failure"
 import type {
   BackgroundMode,
+  EffectiveModelRecord,
   HostSessionIdentity,
   IsolationRecord,
   ResolvedModelRecord,
   ResidencyState,
   RunnerKind,
   SuspensionReason,
+  TaskAwaitingInput,
   TaskIsolationSpec,
   TaskStatus,
 } from "./types"
 import type { TaskRunStats } from "./run-stats-types"
+
+/** An interrupt the parent did not request: the host replaced the child's session mid-turn. */
+export type TaskInterruptCause = "session_replaced"
 
 export type TaskNotification = {
   readonly run_epoch: number
@@ -81,12 +86,13 @@ export type TaskRecordInput = {
   readonly fallback_attempts?: readonly ResolvedModelRecord[]
   readonly resolved_model?: ResolvedModelRecord
   /**
-   * The model the child ACTUALLY started on, recorded once the runner is up (#9722) and kept
-   * current from the child's own model observations - `model`/`resolved_model` state the plan,
+   * The model the child ACTUALLY runs, recorded once the runner is up (#9722) and kept current
+   * from the child's own model observations AND its live model events - model_changed (any
+   * source) plus the two retry-fallback events (F12). `model`/`resolved_model` state the plan,
    * this states the route that ran. Absent on records predating the field or a child whose
    * effective model could not be observed.
    */
-  readonly effective_model?: ResolvedModelRecord
+  readonly effective_model?: EffectiveModelRecord
   readonly tool_allow?: readonly string[]
   readonly tool_deny?: readonly string[]
   readonly notify_on_terminal: boolean
@@ -104,6 +110,10 @@ export type TaskRecordInput = {
 }
 
 export type TaskRecord = TaskRecordInput & TaskStartFailureRecordFields & {
+  readonly effect_seq?: number
+  /** The exact id of the last identified input this task sent; reconciliation reads its receipt by it. */
+  readonly last_effect_id?: string
+  readonly uncertain_inputs?: readonly import("../runners/input-effects").IdentifiedInput[]
   readonly isolation?: IsolationRecord
   readonly task_id: string
   readonly status: TaskStatus
@@ -111,15 +121,28 @@ export type TaskRecord = TaskRecordInput & TaskStartFailureRecordFields & {
   readonly created_at: string
   readonly updated_at: string
   readonly started_at?: string
+  /** Live snapshot metadata from the owning handle, not a persisted liveness claim. */
+  readonly last_seen_at?: string
   readonly terminal_at?: string
   readonly pid?: number
   readonly host_pid?: number
   readonly child_session_id?: string
   readonly spawn_spec?: TaskSpawnSpec
   /** Mirrors TaskRecordInput.effective_model; see there. */
-  readonly effective_model?: ResolvedModelRecord
+  readonly effective_model?: EffectiveModelRecord
   readonly final_response?: string
   readonly error_message?: string
+  /** Why a run was interrupted when the parent did not ask for it; such an interrupt notifies the parent. */
+  readonly interrupt_cause?: TaskInterruptCause
+  readonly stop_reason?: "deadline"
+  readonly deadline?: Readonly<Record<string, unknown>>
+  // Exit observed, cause unconfirmed: status stays running until the owning manager confirms it.
+  readonly provisional_exit?: {
+    readonly observed_at: string
+    readonly run_epoch: number
+    readonly code: number | null
+    readonly signal: string | null
+  }
   readonly killed?: boolean
   readonly run_stats?: TaskRunStats
   readonly notification: TaskNotification
@@ -138,6 +161,11 @@ export type TaskRecord = TaskRecordInput & TaskStartFailureRecordFields & {
   readonly suspension_reason?: SuspensionReason
   // With `suspension_reason: "revival_deferred"`: the reconcile outcome's reason (capacity, lock_contended, ...).
   readonly revival_deferred_reason?: string
+  // The reattach found the resumed session's last turn ended aborted (or never answered) and idle:
+  // nothing can continue it but the user. Cleared by a successful delivery, a plain reattach, or terminal (senpi#3266).
+  readonly awaiting_input?: TaskAwaitingInput
+  // One parked episode's absolute deadline; retry writes and parent restarts must not extend it.
+  readonly recovery_deadline_at?: number
   readonly runner_kind?: RunnerKind
   readonly host_session?: HostSessionIdentity
   readonly fallback_handoff_epoch?: number

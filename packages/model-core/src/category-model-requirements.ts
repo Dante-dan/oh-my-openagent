@@ -3,6 +3,10 @@ import type { ModelRequirement } from "./model-requirement-types"
 export const CATEGORY_MODEL_REQUIREMENTS: Record<string, ModelRequirement> = {
   "visual-engineering": {
     fallbackChain: [
+      // Argon at its lowest accepted thinking level leads (#10187): off/minimal map to null for
+      // this model, so `low` is the floor; Copilot joins once code-yeongyu/senpi#3379 verifies its
+      // thinking control. The rung is unresolvable until the engine catalog carries the model.
+      { providers: ["google", "google-vertex", "opencode"], model: "gemini-4-argon", variant: "low" },
       {
         providers: ["anthropic", "anthropic-api", "github-copilot", "opencode"],
         model: "claude-fable-5-1",
@@ -104,10 +108,15 @@ export const CATEGORY_MODEL_REQUIREMENTS: Record<string, ModelRequirement> = {
       },
       { providers: ["xiaomi", "opencode-go"], model: "mimo-v2.6-pro", variant: "max" },
       { providers: ["xai", "github-copilot", "opencode-go"], model: "grok-4.7", variant: "xhigh" },
+      // GLM 5.3 sits ahead of the GPT rungs so a Claude + Z.ai user does not fall from Sonnet to GPT (#10306).
+      { providers: ["zai-coding-plan", "opencode-go"], model: "glm-5.3", variant: "high" },
+      // GPT-6.1 Sol is the current GPT default, served only by the OpenAI lanes; GPT-5.6 Sol stays
+      // behind it so Copilot, OpenCode Zen and a registry without 6.1 still resolve the lane (#9844).
+      { providers: ["openai", "chatgpt-subscription"], model: "gpt-6.1-sol", variant: "medium" },
       {
         providers: ["openai", "chatgpt-subscription", "github-copilot", "opencode"],
-        model: "gpt-5.6-terra",
-        variant: "high",
+        model: "gpt-5.6-sol",
+        variant: "medium",
       },
       {
         providers: ["anthropic", "anthropic-api", "github-copilot", "opencode"],
@@ -139,10 +148,14 @@ export const CATEGORY_MODEL_REQUIREMENTS: Record<string, ModelRequirement> = {
     ],
   },
   writing: {
-    // Writing runs on Claude only: with none of these models reachable the lane is unavailable instead
-    // of borrowing another family through the session or system default.
+    // Writing runs on its own rungs only: with none of these models reachable the lane is unavailable
+    // instead of borrowing another family through the session or system default.
     requiresAnyModel: true,
     fallbackChain: [
+      // Argon at its lowest accepted thinking level leads (#10187): off/minimal map to null for
+      // this model, so `low` is the floor; Copilot joins once code-yeongyu/senpi#3379 verifies its
+      // thinking control. The rung is unresolvable until the engine catalog carries the model.
+      { providers: ["google", "google-vertex", "opencode"], model: "gemini-4-argon", variant: "low" },
       {
         providers: ["anthropic", "anthropic-api", "github-copilot", "opencode"],
         model: "claude-opus-5-5",

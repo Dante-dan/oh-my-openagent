@@ -1,21 +1,7 @@
-import { mkdtempSync } from "node:fs"
-import { tmpdir } from "node:os"
-import { join } from "node:path"
-
 import type { OmoMemorySettings } from "@oh-my-opencode/omo-config-core"
 
 import { FakeExtensionAPI } from "../../../test-support/fake-extension-api"
 
-// Every memory test that registers the component without its own `env` falls through to
-// process.env, and memory-core resolves the default root from os.homedir(), which Bun fixes at
-// process start - the root harness's hermetic HOME does not reach it. Component registration
-// sweeps the resolved memory root (transient-sweep.ts), so that fallthrough must land in a
-// per-process temp dir and never in the developer's real ~/.omo/memory. Unconditional on purpose:
-// no test here legitimately needs the real root, and a shell-exported OMO_MEMORY_HOME is real.
-// The directory lives for the whole process, so it goes in the root test preload's process-scoped
-// directory, which is removed with the run (#9766).
-const processTempDir = process.env.OMO_TEST_PROCESS_TMPDIR ?? tmpdir()
-process.env.OMO_MEMORY_HOME = join(mkdtempSync(join(processTempDir, "omo-memory-test-home-")), "memory")
 import type { ComponentContext } from "../../extension/types"
 import type { SenpiOmoConfigResult } from "../config-resolution"
 
@@ -27,11 +13,11 @@ export type SessionEntryFixture = {
 }
 
 export class MemoryFakeExtensionAPI extends FakeExtensionAPI {
-  readonly entries: Array<{ customType: string; data: unknown }> = []
+  readonly entries: Array<{ customType: string; data: unknown; options?: { readonly startupBookkeeping?: boolean } }> = []
   readonly entryRenderers: Array<{ customType: string; renderer: unknown }> = []
 
-  appendEntry(customType: string, data?: unknown): void {
-    this.entries.push({ customType, data })
+  appendEntry(customType: string, data?: unknown, options?: { readonly startupBookkeeping?: boolean }): void {
+    this.entries.push(options === undefined ? { customType, data } : { customType, data, options })
   }
 
   registerEntryRenderer(customType: string, renderer: unknown): void {

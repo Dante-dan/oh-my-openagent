@@ -3,8 +3,11 @@ import { log } from "@oh-my-opencode/utils"
 import type { SuspensionReason, TaskRecord, TaskRunStats, TaskTransition } from "../state"
 import type { TaskRecordStore } from "../store"
 import type { ManagedChildHandle } from "./child-handle"
+import type { HostSessionReplaced } from "../runners/rpc-host/session-client"
+import type { ForgetOptions } from "./types"
 import { terminalFailureMessage } from "./credential-failure"
 import { nowIso } from "./manager-helpers"
+import { createProvisionalExitTracker, type ExitConfirmationSchedule } from "./provisional-exit"
 
 export type ManagedOutcome = Awaited<ReturnType<ManagedChildHandle["waitForOutcome"]>>
 
@@ -22,13 +25,14 @@ export type ErrorOutcomeInput = {
 // freshest handles and the freshest on-disk record rather than facts captured when the tracking
 // cycle was armed.
 export type OutcomeTrackerPorts = {
+  readonly scheduleExitConfirmation?: ExitConfirmationSchedule
   readonly store: TaskRecordStore
   readonly now: () => number
   readonly liveHandle: (taskId: string) => ManagedChildHandle | undefined
   readonly tryLoad: (taskId: string) => TaskRecord | null
   readonly runStatsSnapshot: (taskId: string) => TaskRunStats | undefined
   readonly releaseSlot: (taskId: string, model: string, epoch: number) => void
-  readonly forget: (taskId: string) => void
+  readonly forget: (taskId: string, options: ForgetOptions) => void
   // `terminal` is supplied only when the store could not persist the terminal state: the on-disk
   // record is then guaranteed non-terminal, so the waiters must be settled from this record instead.
   readonly settleWaiters: (taskId: string, terminal?: TaskRecord) => void
@@ -110,6 +114,7 @@ function errnoField(error: unknown, key: "code" | "syscall" | "path"): string | 
 }
 
 export function createOutcomeTracker(ports: OutcomeTrackerPorts): OutcomeTracker {
+  const provisional = createProvisionalExitTracker(ports)
   // A terminal outcome is never lost to a persistence fault (#8050). When the store cannot write the
   // terminal record (Windows EPERM on the rename after the store's own retries), the run is still
   // settled: the residency is released through forget() and every waiter receives a synthesized
@@ -126,7 +131,7 @@ export function createOutcomeTracker(ports: OutcomeTrackerPorts): OutcomeTracker
         path: errnoField(error, "path"),
         error: String(error),
       })
-      ports.forget(taskId)
+      ports.forget(taskId, { path: "park" })
       ports.settleWaiters(taskId, {
         ...owned,
         status: "error",
@@ -154,6 +159,7 @@ export function createOutcomeTracker(ports: OutcomeTrackerPorts): OutcomeTracker
       type: "fail",
       timestamp: input.timestamp,
       error_message: terminalFailureMessage(owned, input.outcome.failure.message),
+      ...(input.outcome.failure.kind === "child-unresponsive" ? { failure_kind: input.outcome.failure.kind } : {}),
       ...(input.outcome.killed === true ? { killed: true } : {}),
       ...(input.runStats === undefined ? {} : { run_stats: input.runStats }),
     })
@@ -169,16 +175,48 @@ export function createOutcomeTracker(ports: OutcomeTrackerPorts): OutcomeTracker
       return { ...rest, residency_state: "rpc_detached", suspension_reason: reason, updated_at: nowIso(ports.now) }
     })
     ports.store.appendEvent(taskId, { type: "suspended", payload: { reason } })
-    ports.forget(taskId)
+    ports.forget(taskId, { path: "park" })
   }
 
   // One park watch per task, re-armed with every tracked run. It outlives the run's outcome: a child
   // that stays resident after its turn is exactly the session a host idle sweep parks.
   const parkWatches = new Map<string, () => void>()
 
+  // The host swapped the session under its live routing handle: the child keeps running on a NEW
+  // transcript and durable id, so the record follows - no park, no release. Nothing later may
+  // reattach-by-path into the abandoned transcript (F9).
+  function replaceOwned(taskId: string, handle: ManagedChildHandle, epoch: number, event: HostSessionReplaced): void {
+    if (ownedRecord(ports, taskId, handle, epoch) === null) return
+    ports.store.mutate(taskId, (fresh) => {
+      if (fresh.host_session === undefined) return fresh
+      return {
+        ...fresh,
+        host_session: { ...fresh.host_session, session_path: event.sessionFile },
+        child_session_id: event.durableSessionId,
+        updated_at: nowIso(ports.now),
+      }
+    })
+    ports.store.appendEvent(taskId, {
+      type: "replaced",
+      payload: { session_path: event.sessionFile, durable_session_id: event.durableSessionId },
+    })
+  }
+
+  // One replace watch per task beside the park watch: a resident child whose turn ended is exactly
+  // the session a raw client can still issue `new_session` on.
+  const replaceWatches = new Map<string, () => void>()
+
+  function watchReplaced(taskId: string, handle: ManagedChildHandle, epoch: number): void {
+    const stop = handle.onReplaced?.((event) => replaceOwned(taskId, handle, epoch, event))
+    if (stop !== undefined) replaceWatches.set(taskId, stop)
+  }
+
   function release(taskId: string): void {
+    provisional.release(taskId)
     parkWatches.get(taskId)?.()
     parkWatches.delete(taskId)
+    replaceWatches.get(taskId)?.()
+    replaceWatches.delete(taskId)
   }
 
   function watchParks(taskId: string, handle: ManagedChildHandle, epoch: number): void {
@@ -204,6 +242,7 @@ export function createOutcomeTracker(ports: OutcomeTrackerPorts): OutcomeTracker
 
   function trackOutcome(taskId: string, handle: ManagedChildHandle, model: string, epoch: number): void {
     watchParks(taskId, handle, epoch)
+    watchReplaced(taskId, handle, epoch)
     handle
       .waitForOutcome()
       .then(async (outcome) => {
@@ -214,19 +253,34 @@ export function createOutcomeTracker(ports: OutcomeTrackerPorts): OutcomeTracker
         const timestamp = nowIso(ports.now)
         const runStats = ports.runStatsSnapshot(taskId)
         if (outcome.status === "error") {
-          void settleErrorOutcome({
-            taskId,
-            handle,
-            model,
-            epoch,
-            outcome,
-            runStats,
-            timestamp,
-          }).catch((error: unknown) => {
-            log("senpi-task manager error outcome tracking failed", {
-              taskId,
-              error: String(error),
+          const input = { taskId, handle, model, epoch, outcome, runStats, timestamp }
+          const commit = (): void => {
+            const stopped = ports.stopSettlement?.(taskId)
+            const settling = stopped === undefined
+              ? settleErrorOutcome({ ...input, timestamp: nowIso(ports.now) })
+              : settleStopped(taskId, handle, model, epoch, stopped)
+            void settling.catch((error: unknown) => {
+              log("senpi-task manager error outcome tracking failed", { taskId, error: String(error) })
             })
+          }
+          if (!provisional.defer(input, owned, commit)) commit()
+          return
+        }
+
+        // The run stopped for a reason the parent did not ask for - another client's user abort (F10a,
+        // partial text kept) or its session being replaced (cause and message) - so it is terminal and
+        // resumable, never a failure: no fail transition, no failure notification, no runtime fallback.
+        if (outcome.status === "interrupted") {
+          ports.releaseSlot(taskId, model, epoch)
+          const settlingInterrupted = settleIsolationFor(ports, owned, false)
+          if (settlingInterrupted !== undefined) await settlingInterrupted
+          persistTerminal(taskId, owned, timestamp, {
+            type: "interrupt",
+            timestamp,
+            ...(outcome.message === undefined ? {} : { error_message: outcome.message }),
+            ...(outcome.cause === undefined ? {} : { interrupt_cause: outcome.cause }),
+            ...(outcome.finalResponse === undefined ? {} : { final_response: outcome.finalResponse }),
+            ...(runStats === undefined ? {} : { run_stats: runStats }),
           })
           return
         }

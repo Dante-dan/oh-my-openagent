@@ -128,6 +128,8 @@ describe("Senpi compatibility test script", () => {
       await writeFile(join(pluginRoot, "extensions", "omo-computer-use.js"), "export {}\n")
       await writeFile(join(pluginRoot, "extensions", "omo-memory-doctor.js"), "export {}\n")
       await writeFile(join(pluginRoot, "extensions", "omo-memory-memfs.js"), "export {}\n")
+      await writeFile(join(pluginRoot, "extensions", "omo-memory-palace.js"), "export {}\n")
+      await writeFile(join(pluginRoot, "extensions", "omo-thread-client.js"), "export {}\n")
       await writeFile(join(pluginRoot, "extensions", "assets.generated.json"), "{}\n")
       await mkdir(join(pluginRoot, "runtime", "agent-toolkit-sdk"), { recursive: true })
       await writeFile(join(pluginRoot, "runtime", "agent-toolkit-sdk", "sdk.js"), "export {}\n")
@@ -231,7 +233,7 @@ describe("Senpi compatibility test script", () => {
     // #then
     expect(senpiJob).toContain("os: [ubuntu-latest, macos-latest, windows-latest]")
     expect(senpiJob).toContain('node-version: "24"')
-    expect(senpiJob).toContain('bun-version: "1.4.2"')
+    expect(senpiJob).toContain('bun-version: "1.4.3"')
     expect(senpiJob).toContain("bun run build:senpi-plugin")
     expect(senpiJob).toContain("npm pack --pack-destination")
     expect(senpiJob).toContain("npm --prefix packages/lsp-daemon test -- test/daemon-roundtrip.test.ts")

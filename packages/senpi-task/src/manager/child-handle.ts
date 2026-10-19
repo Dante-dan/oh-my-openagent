@@ -1,11 +1,13 @@
 import type { ChildHandle as InProcessChildHandle, RunnerOutcome } from "../runners/in-process/child-handle"
 import { mapExitOutcomeToError } from "../runners/rpc/exit-mapping"
 import type { HostSessionChildHandle } from "../runners/rpc-host/handle-port"
+import type { HostSessionReplaced } from "../runners/rpc-host/session-client"
 import type { RpcChildHandle, RpcEntriesResult, RpcSpawnSpec, RpcSwitchSessionResult } from "../runners/types"
 import type { SuspensionReason } from "../state"
 import type { ChildExtensionListener } from "../runners/child-extension-events"
 import { HOST_TURN_RESUMED_EVENT } from "./host-turn-resumed"
 import type { EffectiveModel } from "../runners/pinned-model-equivalence"
+import type { ReconciledTurnNotice } from "../runners/rpc-host/reconcile-turn"
 
 export type { RunnerOutcome } from "../runners/in-process/child-handle"
 
@@ -30,6 +32,7 @@ export type ManagedChildListener = (event: ManagedChildEvent) => void
 // handle surfaces are normalized here: a promise-returning dispose, an optional pid/sessionId, and a
 // single waitForOutcome() that yields the unified RunnerOutcome for either runner.
 export type ManagedChildHandle = {
+  reconcileInputs?(): Promise<void>
   readonly task_id: string
   // Which runner owns this child. `pid` cannot answer that: a daemon session has no pid either.
   // Absent only on handles built before the field shipped (they are in-process by construction).
@@ -51,6 +54,9 @@ export type ManagedChildHandle = {
   // A daemon-session child whose session parked - itself (its recorded endpoint refused a reattach) or
   // by its host (idle sweep, generation handoff): the record parks with that reason either way.
   onParked?(listener: (event: { readonly reason: SuspensionReason }) => void): () => void
+  // A daemon-session child the host swapped under its live routing handle: the record's session
+  // identity is re-stamped from this event (F9); the child keeps running on the new transcript.
+  onReplaced?(listener: (event: HostSessionReplaced) => void): () => void
   // A daemon-session child whose connection dropped and is being recovered (omo#9403).
   transportRecovering?(): boolean
   // A cancel was accepted: no transport recovery may bring this child back as running.
@@ -66,6 +72,7 @@ export type ManagedChildHandle = {
   // Present on process children: fires when the child starts a run on its own after its turn
   // settled (a monitor or background job woke it), so the manager can reopen the record.
   onSelfResumed?(listener: () => void): () => void
+  onReconciled?(listener: (notice: ReconciledTurnNotice) => void): () => void
   // RPC handles expose a settled process signal; in-process handles omit it because their session
   // lifecycle has no separate child process to observe.
   hasExited?(): boolean
@@ -73,6 +80,7 @@ export type ManagedChildHandle = {
   getEntries?(since?: string): Promise<RpcEntriesResult>
   // Partial assistant text captured so far (used by interrupt to preserve work-in-progress).
   lastAssistantText(): string | undefined
+  lastSeen?(): number | undefined
   terminate?(): Promise<void>
   dispose(): Promise<void>
 }
@@ -103,6 +111,7 @@ export function adaptRpcHandle(handle: RpcChildHandle): ManagedChildHandle {
   return {
     task_id: handle.task_id,
     kind: "kind" in handle && handle.kind === "host-session" ? "host-session" : "rpc",
+    ...(handle.reconcileInputs === undefined ? {} : { reconcileInputs: handle.reconcileInputs }),
     ...(hostSession === undefined ? {} : { hostSession }),
     get sessionId() {
       return handle.sessionId
@@ -115,9 +124,11 @@ export function adaptRpcHandle(handle: RpcChildHandle): ManagedChildHandle {
     ...(isHostSessionHandle(handle)
       ? {
           onParked: (listener) => handle.onParked(listener),
+          onReplaced: (listener) => handle.onReplaced(listener),
           transportRecovering: () => handle.transportRecovering(),
           markStopping: () => handle.markStopping(),
           stopWhenReachable: () => handle.stopWhenReachable(),
+          onReconciled: (listener: (notice: ReconciledTurnNotice) => void) => handle.onReconciled(listener),
         }
       : {}),
     steer: (text) => handle.steer(text),
@@ -131,6 +142,7 @@ export function adaptRpcHandle(handle: RpcChildHandle): ManagedChildHandle {
     ...(switchSession === undefined ? {} : { switchSession: (sessionPath: string) => switchSession(sessionPath) }),
     ...(getEntries === undefined ? {} : { getEntries: (since?: string) => getEntries(since) }),
     lastAssistantText: () => handle.lastAssistantText(),
+    lastSeen: () => handle.lastSeen(),
     terminate: () => handle.terminate(),
     dispose: () => handle.dispose(),
   }
@@ -164,7 +176,10 @@ async function rpcOutcome(handle: RpcChildHandle): Promise<RunnerOutcome> {
   if (exit !== undefined && exit.kind !== "clean") {
     const facts = mapExitOutcomeToError(exit, { alreadyTerminal: false })
     const message = facts?.error_message ?? "RPC child terminated abnormally"
-    return { status: "error", failure: { kind: "child-prompt-failed", message }, killed: facts?.killed === true }
+    const processExit = exit.facts.pid !== undefined && exit.kind !== "spawn_error"
+      ? { exit: { kind: exit.kind, code: exit.facts.code, signal: exit.facts.signal } }
+      : {}
+    return { status: "error", failure: { kind: "child-prompt-failed", message, ...processExit }, killed: facts?.killed === true }
   }
   // A user-requested abort is a cancellation, never a turn failure. Handles that expose the tracked
   // per-turn outcome never reach here; this fallback serves legacy/custom handles only.

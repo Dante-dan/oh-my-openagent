@@ -9,6 +9,8 @@ import { createRpcModelAdmission, type RpcModelAdmission } from "./rpc/model-adm
 import { type MalformedLineHandler, RpcProtocolClient } from "./rpc/protocol-client"
 import { type RpcSpawnDescriptor, buildRpcSpawn } from "./rpc/spawn"
 import { discardUnstartedRpcHandle } from "./rpc/start-cleanup"
+import { createTaskRecordStore } from "../store"
+import { InputUncertainError } from "./input-effects"
 
 const DEFAULT_HEARTBEAT_INTERVAL_MS = 10_000
 /** senpi capability: a single-session `--mode rpc` process accepts `set_retry_fallback` before its first turn. */
@@ -78,6 +80,9 @@ export class RpcProcessRunner {
       client,
       child,
       taskId: spec.task_id,
+      ...(spec.taskStoreDir === undefined ? {} : {
+        inputStore: createTaskRecordStore({ project_dir: spec.cwd, task: { state_dir: spec.taskStoreDir } }),
+      }),
       heartbeatIntervalMs: this.heartbeatIntervalMs,
       now: this.now,
       childEnv: descriptor.env,
@@ -92,8 +97,10 @@ export class RpcProcessRunner {
         await handle.startInitialPrompt(spec.prompt)
       } else {
         await resume
+        await handle.reconcileInputs?.()
       }
     } catch (error) {
+      if (error instanceof InputUncertainError) error = error.cause
       // Capture this BEFORE cleanup: a rejected prompt can leave the child alive, and the cleanup
       // termination must never be recorded as the cause of the rejection.
       const exitOutcome = handle.exitOutcome()
@@ -138,7 +145,13 @@ export class RpcProcessRunner {
   private async applyFallbackChain(client: RpcProtocolClient, spec: RpcRunnerSpec): Promise<void> {
     const retryFallback = childRetryFallbackProfile(spec)
     if (retryFallback === undefined) return
-    const outcome = await withDeadline(this.sendFallbackChain(client, retryFallback), this.fallbackChainDeadlineMs)
+    // Past the deadline the first prompt goes out, so a probe answered late must not send the chain after it.
+    const expired = new AbortController()
+    const outcome = await withDeadline(
+      this.sendFallbackChain(client, retryFallback, expired.signal),
+      this.fallbackChainDeadlineMs,
+      expired,
+    )
     if (outcome === "applied") return
     if (outcome === "unsupported") {
       this.noticeFallbackChainUnsupported()
@@ -159,9 +172,11 @@ export class RpcProcessRunner {
   private async sendFallbackChain(
     client: RpcProtocolClient,
     retryFallback: NonNullable<ReturnType<typeof childRetryFallbackProfile>>,
+    expired: AbortSignal,
   ): Promise<"applied" | "unsupported" | { readonly refused: string }> {
     try {
       if (!(await engineAcceptsFallbackChain(client))) return "unsupported"
+      if (expired.aborted) return { refused: "deadline passed" }
       const response = await client.send({ type: "set_retry_fallback", retryFallback })
       return response.success ? "applied" : { refused: `refused: ${response.error}` }
     } catch (error) {
@@ -179,10 +194,13 @@ export class RpcProcessRunner {
   }
 }
 
-async function withDeadline<T>(work: Promise<T>, ms: number): Promise<T | "timeout"> {
+async function withDeadline<T>(work: Promise<T>, ms: number, expired: AbortController): Promise<T | "timeout"> {
   let timer: ReturnType<typeof setTimeout> | undefined
   const deadline = new Promise<"timeout">((resolve) => {
-    timer = setTimeout(() => resolve("timeout"), ms)
+    timer = setTimeout(() => {
+      expired.abort()
+      resolve("timeout")
+    }, ms)
   })
   try {
     return await Promise.race([work, deadline])

@@ -16,13 +16,13 @@ export interface OpenedHostSession {
 
 /** The turn-delivery seam: the commands a child handle issues on its session. */
 export type HostSessionCommand =
-  | { readonly type: "prompt"; readonly message: string; readonly streamingBehavior?: "steer" | "followUp" }
-  | { readonly type: "steer"; readonly message: string }
-  | { readonly type: "followUp"; readonly message: string }
+  | { readonly type: "prompt"; readonly message: string; readonly streamingBehavior?: "steer" | "followUp"; readonly clientMessageId?: string }
+  | { readonly type: "steer"; readonly message: string; readonly clientMessageId?: string }
+  | { readonly type: "followUp"; readonly message: string; readonly clientMessageId?: string }
   | { readonly type: "abort" }
 
 /** Why a child parked itself instead of reattaching. */
-export type HostParkReason = "host_incompatible" | "own_host_unreachable" | "store_index_unavailable"
+export type HostParkReason = "host_incompatible" | "own_host_unreachable" | "store_index_unavailable" | "daemon_unavailable"
 
 /**
  * Why the HOST parked a session it holds: its idle sweep (`idle_evicted`) or a generation handoff that
@@ -40,6 +40,19 @@ export interface HostSessionParked {
 export interface HostSessionClosed {
   readonly sessionId: string
   readonly reason: string | undefined
+}
+
+/**
+ * The host swapped the session under its live routing handle (`new_session`, `switch_session`,
+ * `fork`): the handle stays, the durable id and the transcript move. The child follows both.
+ */
+export interface HostSessionReplaced {
+  /** The routing handle the host kept live across the swap. */
+  readonly sessionId: string
+  /** The session's new durable id. */
+  readonly durableSessionId: string
+  /** The session's new transcript path - the child's identity from now on. */
+  readonly sessionFile: string
 }
 
 export interface HostSessionClientPorts {
