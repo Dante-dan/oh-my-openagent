@@ -199,6 +199,8 @@ export class RpcClient {
 		const closed = failure ?? new DesktopServiceError("Closed", this.#exitReason);
 		for (const id of [...this.#pending.keys()]) {
 			const pending = this.#settle(id);
+			// Keep cancellation identity while retaining the drained exit code and stderr diagnostic.
+			if (pending?.cancelled !== undefined) pending.cancelled.cause = closed;
 			pending?.reject(pending.cancelled ?? closed);
 		}
 		this.#hooks.onExit();

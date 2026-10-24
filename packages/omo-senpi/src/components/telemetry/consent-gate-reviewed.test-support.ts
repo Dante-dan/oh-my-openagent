@@ -20,6 +20,7 @@ const GATE_OWNER = "the gate's owner: every writer runs after the isOmoNativeTel
 const CRASH_CLAIMS = "crash claims run from the gated session_started path"
 const IDENTITY_FILES = "salt and install id are created only by a gated hash or attribution call"
 const SUMMARY_STORE = "window, pending and owner files are written only by the session-summary recorder, which exists only when consent held at registration and re-reads it before every write"
+const LEGACY_ROLLUPS = "removes the pre-#10225 rollups store, which nothing reads or sends; it deletes files and links only (never following one) and adds no data"
 const SUMMARY_REMOVAL = "deletes or rename-claims a summary file inside the state dir; it adds no data, and the opted-out purge relies on it"
 const SUMMARY_RECOVERY = "recovery re-creates a window only for a record whose consent mark is on and whose scope still consents (isRecordSendable)"
 const OWNER_LIVENESS = "owner liveness: links back an owner entry it moved aside only when that entry changed meanwhile; it re-creates existing data, never new data"
@@ -286,6 +287,9 @@ export const REVIEWED_WRITERS: readonly ReviewedWriter[] = [
     call: "rmSync(path)", reason: SUMMARY_REMOVAL,
   },
   { file: "session-summary-purge.ts", fn: "remove", guard: "", call: "unlinkSync(path)", reason: SUMMARY_REMOVAL },
+  { file: "session-summary-legacy-rollups.ts", fn: "removeLegacyRollups", guard: 'unless(start === undefined) if(start.kind === "link")', call: "unlink(dir)", reason: LEGACY_ROLLUPS },
+  { file: "session-summary-legacy-rollups.ts", fn: "removeLegacyRollups", guard: 'unless(start === undefined) unless(start.kind === "link") unless(start.kind !== "directory") unless(!isSameDirectory(identity(dir), start))', call: "unlink(join(dir, entry.name))", reason: LEGACY_ROLLUPS },
+  { file: "session-summary-legacy-rollups.ts", fn: "unlink", guard: "", call: "unlinkSync(path)", reason: LEGACY_ROLLUPS },
   {
     file: "session-summary-files.ts", fn: "renameIfPresent",
     guard: "",

@@ -169,6 +169,7 @@ export function createComputerTool(deps: ComputerToolDeps) {
 					return permissionResult(run(context, { code: params.code, readOnly: params.read_only === true, timeoutSeconds }, signal), handle);
 				}
 				case "capabilities":
+					// Like call/run, activation and capability-query permission failures are structured tool results.
 					return permissionResult((async () => {
 						await handle.activate(context);
 						return valueResult(await handle.service.capabilities(), "capabilities unavailable");

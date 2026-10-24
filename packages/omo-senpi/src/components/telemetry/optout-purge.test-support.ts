@@ -1,7 +1,7 @@
 import { expect } from "bun:test"
 import { randomUUID } from "node:crypto"
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs"
-import { join } from "node:path"
+import { join, sep } from "node:path"
 import type { TelemetryCaptureMessage } from "@oh-my-opencode/telemetry-core"
 
 import { FakeExtensionAPI } from "../../../test-support/fake-extension-api"
@@ -53,8 +53,13 @@ export function summaryFiles(stateDir: string): string[] {
   if (!existsSync(root)) return []
   return readdirSync(root, { recursive: true, withFileTypes: true })
     .filter((entry) => entry.isFile())
-    .map((entry) => join(entry.parentPath, entry.name).slice(root.length + 1))
+    .map((entry) => summaryFileName(root, join(entry.parentPath, entry.name)))
     .sort()
+}
+
+/** A file's name under the summary dir with "/" separators on every platform, as every assertion writes it. */
+export function summaryFileName(root: string, file: string, separator: string = sep): string {
+  return file.slice(root.length + 1).split(separator).join("/")
 }
 
 export function readSummaryFile(stateDir: string, name: string): Record<string, unknown> {

@@ -49,7 +49,11 @@ Always required, never null: `fact_id`, `kind`, `raw` (string), `quote` (string)
 | `locator` | object | object | object or null | object or null | object or null |
 | `snapshot_sha256` | sha256 | sha256 | sha256 or null | sha256 or null | sha256 or null |
 | `rationale` | string or null | string or null | string or null | non-empty | string or null |
-| `exact` | from `value` | null | written by derive (rational or null) | rational or null | written by derive (rational or null) |
+| `exact` | from `value` | null | reduced rational | rational or null | reduced rational |
+| `context` | null | null | written by derive (object or null) | null | written by derive (object or null) |
+| `operation` | null | null | sum/diff/growth/share/ratio/expr | null | `convert` |
+| `precision` | null | null | `{ places, sigfigs }` | null | `{ places, sigfigs }` |
+| `compatibility` | null | null | checked or unchecked (expr) | null | checked or unchecked (expr) |
 <!-- kind-rules:end -->
 
 - `exact` is `{ num: integer string, den: positive integer string }` or null. A measured row's
@@ -60,6 +64,20 @@ Always required, never null: `fact_id`, `kind`, `raw` (string), `quote` (string)
 - `locator` is `{ artifact, char_start <= char_end, page?, line?, table?, row_label?,
   col_label? }`.
 - All other fields are nullable with the types in `fact-ledger-schema.mjs`.
+
+Exact rational integer strings are canonical: no leading zeros, negative zero, negative denominator,
+or common factors. Unit aliases normalize at input, with numeric scaling for basis-point factors
+in composites. Derived rows store canonical units, compared exactly, including symbols' case; a source
+row's registered alias is canonicalized when the ledger is read (`unit-rules.md` dimension 31).
+
+A ledger written before `context`, `precision`, and `compatibility` existed still loads: source rows
+read those columns as null, and older derived or converted rows load but are never used as operands.
+
+Derived and converted rows require a matching operation, its closed context, distinct existing operands,
+formula, derived_from, precision, and compatibility. Source rows cannot carry derivation fields.
+Precision records nonnegative decimal places and positive significant figures, independently of display
+text. Recomputation verifies redundant audit fields and recursively verifies each shared dependency once.
+New work may consume only active transitive dependencies; historical verification ignores current eligibility.
 
 ## Labels
 

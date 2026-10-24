@@ -121,6 +121,7 @@ describe("ids and status", () => {
 			operands: ["F1", "F2"],
 			derived_from: ["F1", "F2"],
 			exact: { num: "1", den: "3" },
+			formula: "F1 / F2", render: "0.333", precision: { places: 3, sigfigs: 3 }, compatibility: "checked",
 		})
 		expect(derived.fact_id).toBe("F3")
 		expect(nextId(ledger, "quote")).toBe("Q2")
@@ -194,6 +195,7 @@ describe("read and write", () => {
 			operands: ["F1", "F2"],
 			derived_from: ["F1", "F2"],
 			exact: { num: "1", den: "3" },
+			formula: "F1 / F2", render: "0.333", precision: { places: 3, sigfigs: 3 }, compatibility: "checked",
 		})
 		writeLedger(dir, ledger)
 		const loaded = readLedger(dir)

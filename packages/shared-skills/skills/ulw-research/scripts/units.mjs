@@ -10,10 +10,10 @@ import { div, fromDecimal, sub } from "./rational.mjs"
 
 /** [token, dimension, factor, reading, aliases, offset?]; the Korean reading is noted per row. */
 const TABLE = [
-	["mm", "length", "0.001", "open", ["millimeter", "millimeters", "\uBC00\uB9AC\uBBF8\uD130"]], // millimiteo
-	["cm", "length", "0.01", "open", ["centimeter", "centimeters", "\uC13C\uD2F0\uBBF8\uD130"]], // sentimiteo
+	["mm", "length", "0.001", "open", ["millimeter", "millimeters", "millimetre", "millimetres", "\uBC00\uB9AC\uBBF8\uD130"]], // millimiteo
+	["cm", "length", "0.01", "open", ["centimeter", "centimeters", "centimetre", "centimetres", "\uC13C\uD2F0\uBBF8\uD130"]], // sentimiteo
 	["m", "length", "1", "open", ["meter", "meters", "metre", "metres", "\uBBF8\uD130"]], // miteo
-	["km", "length", "1000", "open", ["kilometer", "kilometers", "\uD0AC\uB85C\uBBF8\uD130"]], // killomiteo
+	["km", "length", "1000", "open", ["kilometer", "kilometers", "kilometre", "kilometres", "\uD0AC\uB85C\uBBF8\uD130"]], // killomiteo
 	["g", "mass", "1", "closed", ["gram", "grams", "\uADF8\uB7A8"]], // geuraem
 	["kg", "mass", "1000", "closed", ["kilogram", "kilograms", "\uD0AC\uB85C\uADF8\uB7A8"]], // killogeuraem
 	["t", "mass", "1000000", "closed", ["ton", "tons", "tonne", "tonnes", "\uD1A4"]], // ton
@@ -65,7 +65,7 @@ for (const [token, dimension, factor, reading, aliases, offset] of TABLE) {
 	for (const alias of [token, ...aliases]) {
 		const key = squash(alias)
 		EXACT.set(key, entry)
-		if (key.length > 1 && /^[A-Za-z]+$/.test(key) && !WORD.has(key.toLowerCase())) WORD.set(key.toLowerCase(), entry)
+		if (alias !== token && key.length > 2 && /^[a-z]+$/.test(key) && !WORD.has(key.toLowerCase())) WORD.set(key.toLowerCase(), entry)
 	}
 }
 

@@ -22,19 +22,34 @@ export function hasQueuedSummaryFiles(stateDir: string): boolean {
  * never writes. An opt-out set by environment variable belongs to one process, so it is never passed in here:
  * other sessions that consented keep their windows and pending events.
  */
-export function purgeUnconsentedQueue(stateDir: string, isScopeConsented: (scope: QueuedScope) => boolean): void {
+export function purgeUnconsentedQueue(
+  stateDir: string,
+  isScopeConsented: (scope: QueuedScope) => boolean,
+  options: { readonly dropUnreadable?: boolean } = {},
+): void {
   const dir = summaryDir(stateDir)
+  // One persisted-setting read per cwd per pass: a queue of many records from one project loads its config once.
+  const verdicts = new Map<string, boolean>()
+  const consented = (scope: QueuedScope): boolean => {
+    const key = scope.cwd ?? ""
+    const known = verdicts.get(key)
+    if (known !== undefined) return known
+    const verdict = isScopeConsented(scope)
+    verdicts.set(key, verdict)
+    return verdict
+  }
   for (const folder of [dir, join(dir, "pending")]) {
     for (const name of names(folder)) {
       if (!name.endsWith(".json")) continue
       const path = join(folder, name)
-      const verdict = sendable(read(path), isScopeConsented)
-      if (verdict === false) remove(path)
+      const verdict = sendable(read(path), consented)
+      if (verdict === false || (verdict === undefined && options.dropUnreadable === true)) remove(path)
     }
   }
 }
 
-// A record parses to its consent mark and scope; an unreadable file is left for the recorder's own sweep.
+// A record parses to its consent mark and scope. An unreadable or unknown-version file is never sendable either;
+// it is deleted when the caller's own persisted setting is off (dropUnreadable), else left for the recorder's sweep.
 function sendable(value: unknown, isScopeConsented: (scope: QueuedScope) => boolean): boolean | undefined {
   if (typeof value !== "object" || value === null || Reflect.get(value, "v") !== 2) return undefined
   if (Reflect.get(value, "consent") !== "enabled") return false

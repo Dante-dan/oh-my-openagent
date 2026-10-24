@@ -39,11 +39,14 @@ function derivedRow(label: string, from: string[], kind = "derived") {
 		extracted_by: "fact derive",
 		observed_at: "2026-10-23T08:00:00Z",
 		label,
-		operation: kind === "converted" ? "convert" : "sum",
+		operation: kind === "converted" ? "convert" : "expr",
 		operands: [...from],
 		derived_from: [...from],
 		factor: kind === "converted" ? "1000" : null,
 		exact: { num: "2", den: "1" },
+		formula: from.join(" + "), render: "2", precision: { places: 0, sigfigs: 1 },
+		compatibility: kind === "converted" ? "checked" : "unchecked",
+		context: kind === "converted" ? { target: "km" } : null,
 	}
 }
 
@@ -90,7 +93,11 @@ function randomLedger(seed: number) {
 		const roll = random()
 		if (roll < 0.3 || values.length < 2) addRow(ledger, measured(`m${step}`))
 		else if (roll < 0.4) addRow(ledger, quoteRow(`q${step}`))
-		else if (roll < 0.6) addRow(ledger, derivedRow(`d${step}`, [...new Set([pick(random, values), pick(random, values)])], pick(random, ["derived", "converted"])))
+		else if (roll < 0.6) {
+			const kind = pick(random, ["derived", "converted"])
+			const from = kind === "converted" ? [pick(random, values)] : [...new Set([pick(random, values), pick(random, values)])]
+			addRow(ledger, derivedRow(`d${step}`, from, kind))
+		}
 		else if (roll < 0.8 && active.length > 0) retractRow(ledger, pick(random, active), "wrong page")
 		else if (active.length > 1) {
 			const id = pick(random, active)

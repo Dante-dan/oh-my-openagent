@@ -97,7 +97,10 @@ export class TrackedDesktopService extends DesktopService {
   async #observe<T>(operation: Promise<T>): Promise<T> {
     try {
       const result = await operation
-      this.#engineState = "ready"
+      // A retried launch can recover; an unrelated reply cannot repair a binary/ABI failure.
+      if (this.#engineState === "not started" || this.#engineState === "launch-context-unavailable") {
+        this.#engineState = "ready"
+      }
       return result
     } catch (error) {
       if (!(error instanceof Error)) throw error

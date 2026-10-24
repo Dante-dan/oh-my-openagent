@@ -1,6 +1,55 @@
 import { describe, expect, it } from "vitest";
 import { helloDesktopEngine } from "../src/handshake";
-import { legacySelf, refusalChild, refusalRecord } from "./refusal-child";
+import { DesktopLaunchRefusal } from "../src/launch-refusal";
+import { legacySelf, legacyUnresolved, refusalChild, refusalRecord } from "./refusal-child";
+
+describe("legacy refusal exit contract", () => {
+	for (const [line, reason] of [[legacySelf, "self-responsible"], [legacyUnresolved, "unresolved"]] as const) {
+		for (const code of [null, 0, 1, 2, 3]) {
+			it(`classifies legacy ${reason} only at exit 1, not ${code}`, () => {
+				const parser = new DesktopLaunchRefusal();
+				parser.push(line);
+				const error = parser.finish(code, null, "fixture exit");
+				if (code === 1) expect(error).toMatchObject({ code: "launch-context-unavailable", reason });
+				else expect(error).toBeUndefined();
+			});
+		}
+		it(`does not classify legacy ${reason} terminated by a signal`, () => {
+			const parser = new DesktopLaunchRefusal();
+			parser.push(line);
+			expect(parser.finish(1, "SIGTERM", "fixture exit")).toBeUndefined();
+		});
+	}
+});
+
+describe("streamed refusal byte limit", () => {
+	for (const bytes of [511, 512, 513]) {
+		it(`rejects a ${bytes}-byte non-ASCII record without legacy fallback`, () => {
+			// The accepted schema is ASCII-only; malformed multibyte records must not become legacy refusals.
+			const prefix = 'SENPI_DESKTOP_LAUNCH_REFUSED {"version":1,"reason":"';
+			const suffix = '"}\n';
+			const remaining = bytes - Buffer.byteLength(prefix + suffix, "utf8");
+			const payload = "\u00e9".repeat(Math.floor(remaining / 2)) + "x".repeat(remaining % 2);
+			const record = prefix + payload + suffix;
+			expect(Buffer.byteLength(record, "utf8")).toBe(bytes);
+			expect(record.length).toBeLessThan(512);
+			const parser = new DesktopLaunchRefusal();
+			parser.push(prefix + payload.slice(0, 100));
+			parser.push(payload.slice(100) + suffix + legacySelf);
+			expect(parser.finish(1, null, "fixture exit")).toBeUndefined();
+		});
+		it(`checks a valid ASCII record at the same ${bytes}-byte boundary`, () => {
+			const record = refusalRecord("unresolved");
+			const padded = record.replace("{", " ".repeat(bytes - Buffer.byteLength(record, "utf8")) + "{");
+			const parser = new DesktopLaunchRefusal();
+			parser.push(padded.slice(0, 100));
+			parser.push(padded.slice(100));
+			const error = parser.finish(1, null, "fixture exit");
+			if (bytes <= 512) expect(error).toHaveProperty("reason", "unresolved");
+			else expect(error).toBeUndefined();
+		});
+	}
+});
 
 describe("hello helper launch refusal", () => {
 	for (const reason of ["self-responsible", "unresolved"]) {

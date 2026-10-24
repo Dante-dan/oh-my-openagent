@@ -1,6 +1,7 @@
 // fidelity-state.mjs - per-sentence failure counts for the fidelity repair loop. A sentence is
 // keyed by its section slug and the sorted fact ids it cites, so a reworded sentence that
-// cites the same facts keeps its count. node: builtins only.
+// cites the same facts keeps its count. The exact slug and id rules are in the comment above
+// slugify in fact-fill.mjs. node: builtins only.
 
 import { existsSync } from "node:fs"
 import { join } from "node:path"

@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import { mkdirSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 
 import { CHECKPOINT_MAX_TURNS } from "./omo-native-session-summary"
@@ -51,6 +52,8 @@ describe("omo-native session_summary opt-out purge", () => {
   for (const [label, env] of [
     ["DO_NOT_TRACK=1", { DO_NOT_TRACK: "1" }],
     ["OMO_DISABLE_POSTHOG=1", { OMO_DISABLE_POSTHOG: "1" }],
+    // CI detection is an automated-run opt-out (#10934); the test env otherwise allows automation.
+    ["CI=1", { CI: "1", OMO_TELEMETRY_ALLOW_AUTOMATION: "" }],
   ] as const) {
     test(`#given a killed opted-in process's queue on disk #when a process opted out only by ${label} starts and quits #then that queue is left intact and nothing is sent`, async () => {
       await withTempAgentDir(async (agentDir) => {
@@ -182,4 +185,26 @@ describe("omo-native session_summary opt-out purge", () => {
       expectNoRepeatedSummaryKey(recorder, "hashed:cycled", 2)
     })
   })
+
+  // Lead ruling (2026-10-24): a torn or unreadable summary file can never be sent; under a persisted opt-out it
+  // goes with the rest, while an env-only opt-out still leaves the directory to the consented processes.
+  for (const [label, setup, gone] of [
+    ["the persisted setting off", { env: {}, isConfigEnabled: () => false }, true],
+    ["DO_NOT_TRACK only", { env: { DO_NOT_TRACK: "1" }, isConfigEnabled: () => true }, false],
+  ] as const) {
+    test(`#given a torn window and a torn pending event #when a process opted out by ${label} starts #then they are ${gone ? "deleted" : "left in place"}`, async () => {
+      await withTempAgentDir(async (agentDir) => {
+        writeInventory(agentDir)
+        const stateDir = join(agentDir, "omo-senpi", "omo-native")
+        const root = join(stateDir, "session-summary")
+        mkdirSync(join(root, "pending"), { recursive: true })
+        writeFileSync(join(root, "hashed_torn.json"), '{"v":2,"consent":"enabled","scope":{"cwd":"/repo"},"window":{"sums":{"cost_1e4":12')
+        writeFileSync(join(root, "pending", "0395eae0-1111-4222-8333-944455556699.json"), "not json")
+
+        await registerProcess({ agentDir, recorder: createTransportRecorder(), env: setup.env, cwd: "/repo", options: { isConfigEnabled: setup.isConfigEnabled } })
+
+        expect(summaryFiles(stateDir)).toEqual(gone ? [] : ["hashed_torn.json", "pending/0395eae0-1111-4222-8333-944455556699.json"])
+      })
+    })
+  }
 })

@@ -71,7 +71,7 @@ export class DesktopLaunchRefusal {
 		while (offset < chunk.length) {
 			const end = chunk.indexOf("\n", offset);
 			const part = chunk.slice(offset, end === -1 ? chunk.length : end);
-			this.#oversized ||= this.#line.length + part.length >= MAX_RECORD_BYTES;
+			this.#oversized ||= Buffer.byteLength(this.#line + part, "utf8") >= MAX_RECORD_BYTES;
 			this.#line += part.slice(0, Math.max(0, MAX_RECORD_BYTES - this.#line.length));
 			if (end === -1) return;
 			this.#acceptLine();
@@ -84,8 +84,7 @@ export class DesktopLaunchRefusal {
 	finish(code: number | null, signal: string | null, diagnostic: string): DesktopLaunchContextError | undefined {
 		// A partial structured record is not an older engine, even if it printed legacy text earlier.
 		if (this.#line.startsWith(MARKER)) this.#invalid = true;
-		if (this.#disabled || this.#invalid || code === null || code === 0 || signal !== null) return undefined;
-		if (this.#structured && code !== 1) return undefined;
+		if (this.#disabled || this.#invalid || code !== 1 || signal !== null) return undefined;
 		const reason = this.#structured ? this.#reason : this.#legacy;
 		return reason === undefined ? undefined : new DesktopLaunchContextError(reason, `${this.#record}\n${diagnostic}`);
 	}

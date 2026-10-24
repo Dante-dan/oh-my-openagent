@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { RpcClient } from "../src/service/rpc-client";
+import { DesktopServiceError, RpcClient } from "../src/service/rpc-client";
 import { DesktopService } from "../src/service/service";
 import { legacySelf, refusalChild, refusalRecord, type RefusalOptions } from "../../senpi-desktop-engine/test/refusal-child";
 import { rejectionOf } from "./harness";
@@ -16,6 +16,31 @@ const invalid = [
 ] as const;
 
 describe("startup classification exclusions", () => {
+	for (const cancellation of ["abort", "timeout", "close holds"] as const) {
+		it(`keeps crash diagnostics when ${cancellation} precedes exit during grace`, async () => {
+			const rpc = new RpcClient(refusalChild({
+				waitForCancel: true, code: 3, stderr: "fixture engine crashed while releasing input\n",
+			}), { onNotification: () => undefined, onExit: () => undefined });
+			const controller = new AbortController();
+			const result = rejectionOf(rpc.request(cancellation === "close holds" ? "holdKeys" : "engine.hello", {}, {
+				signal: controller.signal,
+				...(cancellation === "timeout" ? { timeoutMs: 0 } : {}),
+			}));
+			if (cancellation === "abort") controller.abort();
+			if (cancellation === "close holds") rpc.cancelHolds();
+			const error = await result;
+			await rpc.exited;
+			expect(error).toBeInstanceOf(DesktopServiceError);
+			if (!(error instanceof DesktopServiceError)) throw error;
+			expect(error).toMatchObject({
+				code: cancellation === "timeout" ? "Timeout" : "Cancelled",
+				engineRestarted: false,
+				cause: { code: "Closed", message: expect.stringContaining("code 3") },
+			});
+			expect(error.cause).toBeInstanceOf(DesktopServiceError);
+			expect(error.cause).toHaveProperty("message", expect.stringContaining("fixture engine crashed while releasing input"));
+		}, 10_000);
+	}
 	for (const [name, record] of invalid) {
 		it(`does not rescue ${name} with a legacy diagnostic`, async () => {
 			// Given: malformed structured output must not fall through to older output.

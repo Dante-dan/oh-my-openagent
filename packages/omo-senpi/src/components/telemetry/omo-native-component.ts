@@ -45,6 +45,7 @@ import {
 } from "./omo-native-summary-wiring"
 import { isTelemetryHostWarmup, resolveTelemetrySessionRole } from "./session-role-resolver"
 import type { LoadSummaryRecovery } from "./session-summary-lazy-recovery"
+import { removeLegacyRollupsOnce } from "./session-summary-legacy-rollups"
 import { startOptOutPurge } from "./session-summary-optout-start"
 import type { ConsentScope } from "./session-summary-storage"
 import {
@@ -121,6 +122,8 @@ export function createOmoNativeTelemetryComponent(options: OmoNativeTelemetryCom
       // The throwaway session that warms a fresh task host is no session of anyone's: it must not be
       // counted as one, nor report the crashes and daily activity the real session reports.
       if (isTelemetryHostWarmup(pi)) return
+      // Pre-#10225 rollups have no reader and no sender left: they go for every upgrader, whatever the consent.
+      removeLegacyRollupsOnce(stateDir, options.diagnostics)
 
       // Consent is the session component's own decision (`isOmoNativeTelemetryEnabled`, the single gate),
       // taken at registration and again before every summary write and every session hash: an opted-out
@@ -147,6 +150,7 @@ export function createOmoNativeTelemetryComponent(options: OmoNativeTelemetryCom
       const purgeQueue = () => startOptOutPurge({
         stateDir,
         isScopeConsented: isQueueScopeConsented,
+        persistedOptOut: !isQueueScopeConsented(consentCwd === undefined ? {} : { cwd: consentCwd }),
         load: options.loadRecovery ?? (() => import("#omo-telemetry-recovery-runtime")),
         ...(options.isPidAlive === undefined ? {} : { isPidAlive: options.isPidAlive }),
         ...(options.diagnostics === undefined ? {} : { diagnostics: options.diagnostics }),

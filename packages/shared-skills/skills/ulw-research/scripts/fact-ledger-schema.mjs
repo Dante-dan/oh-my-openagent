@@ -4,7 +4,8 @@
 // KIND_RULES (fact-ledger-kinds.mjs), never here.
 // Pure functions with no IO; fact-ledger.mjs owns reading, writing, and row changes. node: builtins only.
 
-import { DECIMAL, isCount, isNonEmpty, isObject, isString, kindRuleErrors } from "./fact-ledger-kinds.mjs"
+import { DECIMAL, isCount, isCurrentDerived, isNonEmpty, isObject, isString, kindRuleErrors, LATER_COLUMNS, readRow, storedErrors } from "./fact-ledger-kinds.mjs"
+import { malformed } from "./unit-rules.mjs"
 
 export { DECIMAL, isNonEmpty, isString } from "./fact-ledger-kinds.mjs"
 
@@ -50,8 +51,13 @@ export const ROW_DEFAULTS = Object.freeze({
 	formula: null,
 	factor: null,
 	rationale: null,
+	context: null,
+	precision: null,
+	compatibility: null,
 	status: "active",
 })
+/** Fields added after schema version 1 shipped: written on every new row, optional when reading an older ledger. */
+const OPTIONAL_FIELDS = new Set(LATER_COLUMNS)
 const REQUIRED = ["fact_id", "kind", "raw", "quote", "extracted_by", "observed_at", "label"]
 export const ROW_FIELDS = Object.freeze([...REQUIRED, ...Object.keys(ROW_DEFAULTS)])
 
@@ -70,10 +76,16 @@ function nullOr(value, test) {
 function validateRow(row, index, errors) {
 	const at = `rows[${index}]`
 	if (!isObject(row)) return errors.push(`${at} must be an object`)
-	for (const key of ROW_FIELDS) check(errors, Object.hasOwn(row, key), `${at}.${key} is required`)
+	for (const key of ROW_FIELDS) check(errors, OPTIONAL_FIELDS.has(key) || Object.hasOwn(row, key), `${at}.${key} is required`)
 	for (const key of Object.keys(row)) check(errors, ROW_FIELDS.includes(key), `${at}.${key} is not a ledger field`)
 	check(errors, FACT_KINDS.includes(row.kind), `${at}.kind must be one of ${FACT_KINDS.join(", ")}`)
-	errors.push(...kindRuleErrors(row, at))
+	// Dimension 31 wins at read time: per-kind rules see the row as readRow normalizes it.
+	errors.push(...kindRuleErrors(readRow(row), at))
+	errors.push(...storedErrors(row).map((e) => `${at}.${e}`))
+	if (isCurrentDerived(row)) {
+		const problem = malformed(row)
+		if (problem) errors.push(`${at}: ${problem}`)
+	}
 	check(errors, row.unit === undefined || nullOr(row.unit, isNonEmpty), `${at}.unit must be null or a non-empty token`)
 	for (const key of ["raw", "quote"]) check(errors, row[key] === undefined || isString(row[key]), `${at}.${key} must be a string`)
 	check(errors, row.extracted_by === undefined || isNonEmpty(row.extracted_by), `${at}.extracted_by must be a non-empty string`)
@@ -98,6 +110,12 @@ function validateRow(row, index, errors) {
 	}
 	if (row.factor !== undefined) check(errors, nullOr(row.factor, (v) => isString(v) && DECIMAL.test(v)), `${at}.factor must be null or a decimal string`)
 	check(errors, row.status === undefined || FACT_STATUSES.includes(row.status), `${at}.status must be one of ${FACT_STATUSES.join(", ")}`)
+}
+
+export function rowErrors(row) {
+	const errors = []
+	validateRow(row, 0, errors)
+	return errors
 }
 
 // The status machine and event rule of references/fact-ledger-grammar.md. validateLedger replays
@@ -163,20 +181,19 @@ export function provenanceErrors(rows) {
 		}
 	})
 	const state = new Map()
-	const visit = (id, path) => {
-		if (state.get(id) === "done") return null
-		if (state.get(id) === "open") return [...path.slice(path.indexOf(id)), id]
-		state.set(id, "open")
-		for (const next of refs.get(id)) {
-			const cycle = next !== id && refs.has(next) ? visit(next, [...path, id]) : null
-			if (cycle) return cycle
+	for (const root of refs.keys()) {
+		const stack = [{ id: root, finish: false }]
+		const path = []
+		while (stack.length) {
+			const { id, finish } = stack.pop()
+			if (state.get(id) === "done") continue
+			if (finish) { state.set(id, "done"); path.pop(); continue }
+			if (state.get(id) === "open") return [...errors, `${id} derives from itself through cycle ${[...path, id].join(" -> ")}`]
+			state.set(id, "open")
+			path.push(id)
+			stack.push({ id, finish: true })
+			for (const next of refs.get(id)) if (next !== id && refs.has(next)) stack.push({ id: next, finish: false })
 		}
-		state.set(id, "done")
-		return null
-	}
-	for (const id of refs.keys()) {
-		const cycle = visit(id, [])
-		if (cycle) return [...errors, `${cycle[0]} derives from itself through ${cycle.join(" -> ")}`]
 	}
 	return errors
 }

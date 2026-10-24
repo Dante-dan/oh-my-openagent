@@ -75,6 +75,7 @@ const FIDELITY_BLOCKERS = [
 const FIDELITY_MAJORS = [
 	"untraceable_number",
 	"unsupported_verification",
+	"claim_kind_mismatch",
 	"conflicting_readings",
 	"hedge_dropped",
 	"direction_flipped",
@@ -92,6 +93,7 @@ const FIDELITY_MAJORS = [
 const FIDELITY_MINORS = [
 	"quote_fuzzy_match",
 	"name_outside_quote",
+	"verification_claim_unmarked",
 	"scope_widened_warn",
 	"particle_unverified",
 	"fallback_without_entity",

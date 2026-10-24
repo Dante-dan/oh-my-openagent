@@ -78,9 +78,10 @@ async function main() {
       && JSON.stringify(seedFiles(lanes["optout-env"].filesAfter)) === JSON.stringify(seedFiles(lanes["optout-env"].filesBefore)),
     optoutConfigSentNoSummary: lanes["optout-config"].summaries.length === 0,
     optoutConfigSentNoSeed: seededSent("optout-config").length === 0,
-    optoutConfigLeftNoSeedFile: lanes["optout-config"].filesAfter.every((name) => !name.includes(SEEDED)),
+    // The seeded window, claim AND pending event (named by its uuid) are all gone.
+    optoutConfigLeftNoSeedFile: seedFiles(lanes["optout-config"].filesAfter).length === 0,
     scopelessWindowNeverSent: !lanes["scopeless-optin"].summaries.some((event) => event.uuid === SEED_WINDOW_UUID),
-    scopelessLeftNoSeedFile: lanes["scopeless-optin"].filesAfter.every((name) => !name.includes(SEEDED)),
+    scopelessLeftNoSeedFile: seedFiles(lanes["scopeless-optin"].filesAfter).length === 0,
     scopelessPendingNeverSent: !lanes["scopeless-optin"].summaries.some((event) => event.uuid === SEED_PENDING_UUID),
     scopelessLaneStillReports: lanes["scopeless-optin"].summaries.length > 0,
     everyRunExitedZero: Object.values(lanes).every((lane) => lane.status === 0),
